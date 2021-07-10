@@ -39,7 +39,7 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 | `--workflow-queue`  | `MINIWDL__AWS__WORKFLOW_QUEUE`| Batch job queue on which to schedule the *workflow* job |
 | `--task-queue` | `MINIWDL__AWS__TASK_QUEUE` | Batch job queue on which to schedule *task* jobs |
 | `--fsap` | `MINIWDL__AWS__FSAP` | [EFS Access Point](https://docs.aws.amazon.com/efs/latest/ug/efs-access-points.html) ID, which workflow and task jobs will mount at `/mnt/efs` |
-| `--s3upload` | | (optional) S3 URI prefix under which to upload the wokrflow products, including the log and output files |
+| `--s3upload` | | (optional) S3 URI prefix under which to upload the workflow products, including the log and output files |
 
 Adding `--wait` makes the tool await the workflow job's success or failure, reproducing miniwdl's exit code. `--follow` does the same and also live-streams the workflow log.
 

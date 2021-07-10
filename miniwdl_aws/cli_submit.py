@@ -157,7 +157,7 @@ def miniwdl_submit_awsbatch(argv):
     args.image = args.image if args.image else os.environ.get("MINIWDL__AWS__WORKFLOW_IMAGE", None)
     if not args.image:
         # TODO: public default image
-        args.image = f"{boto3.client('ecr', region_name=aws_region_name).describe_registry()['registryId']}.dkr.ecr.{aws_region_name}.amazonaws.com/miniwdl_aws"
+        args.image = f"{boto3.client('ecr', region_name=aws_region_name).describe_registry()['registryId']}.dkr.ecr.{aws_region_name}.amazonaws.com/miniwdl-aws"
 
     verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
     region_name = detect_aws_region(None)

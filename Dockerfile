@@ -23,5 +23,5 @@ RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 RUN yum clean all && rm -rf /tmp/miniwdl*
 
 # boilerplate configuration file & test assets
-COPY miniwdl-aws.cfg /etc/xdg/miniwdl.cfg
+COPY miniwdl_aws.cfg /etc/xdg/miniwdl.cfg
 COPY test/assets/ /var/miniwdl_aws_test_assets/

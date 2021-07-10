@@ -13,8 +13,8 @@ assert os.environ.get("MINIWDL__AWS__FSAP", "").startswith(
 ), "set environment MINIWDL__AWS__FSAP to EFS Access Point ID (fsap-xxxx)"
 assert (
     "MINIWDL__AWS__WORKFLOW_IMAGE" in os.environ
-    and "amazonaws.com/" in os.environ["MINIWDL__AWS__WORKFLOW_IMAGE"]
-), "set environment MINIWDL__AWS__WORKFLOW_IMAGE to ECR repo+digest"
+    and "miniwdl-aws" in os.environ["MINIWDL__AWS__WORKFLOW_IMAGE"]
+), "set environment MINIWDL__AWS__WORKFLOW_IMAGE to repo:digest"
 assert (
     "MINIWDL__AWS__WORKFLOW_QUEUE" in os.environ
 ), "set MINIWDL__AWS__WORKFLOW_QUEUE to Batch queue name"
