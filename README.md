@@ -1,20 +1,20 @@
-# miniwdl AWS extension
+# miniwdl AWS plugin
 
-**Enables [miniwdl](https://github.com/chanzuckerberg/miniwdl) to run workflows on [AWS Batch](https://aws.amazon.com/batch/) (+[EFS](https://aws.amazon.com/efs/))**
+**Extends [miniwdl](https://github.com/chanzuckerberg/miniwdl) to run workflows on [AWS Batch](https://aws.amazon.com/batch/) (+[EFS](https://aws.amazon.com/efs/))**
 
-This miniwdl plugin enables it to submit AWS Batch jobs to execute WDL workflows. It uses EFS for work-in-progress file I/O, while workflow-level input files may be downloaded from S3, and outputs uploaded as well. Logs are written to both EFS and [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html).
+This miniwdl plugin enables it to submit AWS Batch jobs to execute WDL tasks. It uses EFS for work-in-progress file I/O, with optional workflow-level rails to/from S3. Logs from the workflow and each individual task are written to both EFS and [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html).
 
-## Use interactively within SageMaker Studio
+## Use within Amazon SageMaker Studio
 
-It's easiest to set up miniwdl+Batch for interactive terminal operations within [**Amazon SageMaker Studio**](https://aws.amazon.com/sagemaker/studio/), which provides a cloud web interface with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run`, the filesystem browser to manage the inputs and outputs on EFS, and other JupyterLab features to further analyze the outputs.
+To get started, set up the plugin for interactive terminal operations within [**Amazon SageMaker Studio**](https://aws.amazon.com/sagemaker/studio/), which provides a cloud web interface with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebook features to further analyze the outputs.
 
-See the companion **miniwdl_gwfcore_studio** (TODO: link) recipe to deploy this.
+See the companion **miniwdl-aws-studio** (TODO: link) recipe to deploy this. The plugin is otherwise a bit complicated to set up because it assumes provisioning of a certain stack of AWS infrastructure; read on for details.
 
 ## Unattended workflow submission
 
 For unattended operations, a command-line wrapper `miniwdl_submit_awsbatch` *launches miniwdl in its own small Batch job* to orchestrate the workflow. This **workflow job** then spawns **task jobs** as needed, without needing the submitting computer (e.g. your laptop) to remain connected for the duration. Separate Batch compute environments handle workflow & task jobs, using lightweight [Fargate](https://docs.aws.amazon.com/batch/latest/userguide/fargate.html) resources for workflow jobs. (See below for detailed infra specs.)
 
-With the EFS-centric I/O model, you'll also need a way to browse and manage the filesystem remotely -- such as SageMaker Studio. Alternatively, deploy an instance or container mounting your EFS, to access via SSH or web app (e.g.  [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
+With the EFS-centric I/O model, you'll also need a way to manage the filesystem contents remotely -- such as SageMaker Studio. Alternatively, deploy an instance or container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
 
 ### Submitting workflow jobs
 
@@ -76,7 +76,7 @@ Requirements:
             * `AmazonEC2ContainerRegistryReadOnly`
         * spot fleet role with `AmazonEC2SpotFleetTaggingRole` policy
     * Batch Job Queue connected to compute environment (name e.g. "wdl-tasks")
-4. Workflow execution:
+4. Unattended workflow execution:
     * Batch Compute Environment
         * Fargate resources
     * Batch Job Queue connected to compute environment (name e.g. "wdl-workflows")

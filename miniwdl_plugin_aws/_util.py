@@ -133,7 +133,12 @@ def detect_studio_fsap(logger, efs_id, efs_uid, efs_home, **kwargs):
         return None
     except Exception as exn:
         logger.warning(
-            _("error detecting EFS Access Point", error=str(exn), efs_id=efs_id, ufs_uid=efs_uid,)
+            _(
+                "error detecting EFS Access Point",
+                error=str(exn),
+                efs_id=efs_id,
+                ufs_uid=efs_uid,
+            )
         )
         return None
 
@@ -168,7 +173,13 @@ def detect_gwfcore_batch_queue(logger, efs_id, **kwargs):
         )
         return queues[0]["jobQueueName"]
     except Exception as exn:
-        logger.warning(_("error detecting AWS Batch job queue", error=str(exn), efs_id=efs_id,))
+        logger.warning(
+            _(
+                "error detecting AWS Batch job queue",
+                error=str(exn),
+                efs_id=efs_id,
+            )
+        )
         return None
 
 

@@ -10,8 +10,6 @@ import time
 import shutil
 import threading
 import heapq
-import shlex
-import subprocess
 from contextlib import ExitStack
 import boto3
 import botocore

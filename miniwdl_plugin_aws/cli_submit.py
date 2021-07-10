@@ -38,7 +38,8 @@ def miniwdl_submit_awsbatch(argv):
         help="EFS Access Point ID (fsap-xxxx) to mount at /mnt/efs in all containers [env MINIWDL__AWS__FSAP]",
     )
     group.add_argument(
-        "--workflow-queue", help="job queue for workflow job [env MINIWDL__AWS__WORKFLOW_QUEUE]",
+        "--workflow-queue",
+        help="job queue for workflow job [env MINIWDL__AWS__WORKFLOW_QUEUE]",
     )
     group.add_argument(
         "--task-queue", help="job queue for task jobs [env MINIWDL__AWS__TASK_QUEUE]"
@@ -64,7 +65,9 @@ def miniwdl_submit_awsbatch(argv):
     )
     group = parser.add_argument_group("miniwdl I/O")
     group.add_argument(
-        "--dir", default="/mnt/efs/miniwdl_run", help="Run directory prefix [/mnt/efs/miniwdl_run]",
+        "--dir",
+        default="/mnt/efs/miniwdl_run",
+        help="Run directory prefix [/mnt/efs/miniwdl_run]",
     )
     group.add_argument(
         "--s3upload",
@@ -256,7 +259,9 @@ def miniwdl_submit_awsbatch(argv):
     )
     try:
         workflow_job_id = aws_batch.submit_job(
-            jobName=args.name, jobQueue=args.workflow_queue, jobDefinition=workflow_job_def_handle,
+            jobName=args.name,
+            jobQueue=args.workflow_queue,
+            jobDefinition=workflow_job_def_handle,
         )["jobId"]
         if verbose:
             print(f"Submitted {args.name} to {args.workflow_queue}:", file=sys.stderr)

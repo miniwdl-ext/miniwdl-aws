@@ -125,7 +125,8 @@ def miniwdl_run_s3upload():
         if args.delete_after in ("always", "failure"):
             shutil.rmtree(run_dir)
             print(
-                "[miniwdl_run_s3upload] deleted " + run_dir, file=sys.stderr,
+                "[miniwdl_run_s3upload] deleted " + run_dir,
+                file=sys.stderr,
             )
         end_log_and_exit(miniwdl.returncode)
 
@@ -150,12 +151,14 @@ def miniwdl_run_s3upload():
         check=True,
     )
     print(
-        "[miniwdl_run_s3upload] uploaded " + s3_upload_folder + "outputs.json", file=sys.stderr,
+        "[miniwdl_run_s3upload] uploaded " + s3_upload_folder + "outputs.json",
+        file=sys.stderr,
     )
     if args.delete_after in ("always", "success"):
         shutil.rmtree(run_dir)
         print(
-            "[miniwdl_run_s3upload] deleted " + run_dir, file=sys.stderr,
+            "[miniwdl_run_s3upload] deleted " + run_dir,
+            file=sys.stderr,
         )
 
     end_log_and_exit(miniwdl.returncode)
@@ -163,7 +166,8 @@ def miniwdl_run_s3upload():
 
 def end_log_and_exit(code):
     print(
-        "\n" + END_OF_LOG, file=sys.stderr,
+        "\n" + END_OF_LOG,
+        file=sys.stderr,
     )
     sys.exit(code)
 
