@@ -57,7 +57,7 @@ def miniwdl_submit_awsbatch(argv):
     )
     group.add_argument(
         "--image",
-        help="miniwdl_aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
+        help="miniwdl-aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
         # TODO: default from some public registry
     )
     parser.add_argument(
