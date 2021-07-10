@@ -1,0 +1,17 @@
+repos:
+- repo: local
+  hooks:
+  - id: black
+    name: black
+    language: system
+    files: \.py$
+    verbose: true
+    entry: black
+    args: [-l,'100']
+  - id: flake8
+    name: flake8
+    language: system
+    files: \.py$
+    verbose: true
+    entry: flake8
+    args: [--max-line-length, "100", "--ignore=E501,W503,E722,E203"]

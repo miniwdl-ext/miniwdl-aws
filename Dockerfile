@@ -1,0 +1,23 @@
+# Docker image with miniwdl & the AWS plugin baked in. Suitable for submission to Batch as the
+# "head job" launching & monitoring other jobs (WDL tasks).
+
+FROM public.ecr.aws/amazonlinux/amazonlinux:2
+
+# dependencies
+RUN yum check-update && yum install -y \
+    python3-pip \
+    awscli \
+
+# miniwdl
+RUN pip3 install miniwdl==1.2.1 reentry boto3 requests
+
+# miniwdl_plugin_aws
+COPY ./ /tmp/miniwdl_plugin_aws/
+RUN bash -c 'cd /tmp/miniwdl_plugin_aws && pip3 install .'
+
+# cleanup (for squashed image)
+RUN yum clean all && rm -rf /tmp/miniwdl*
+
+# boilerplate configuration file & test assets
+COPY miniwdl_aws.cfg /etc/xdg/miniwdl.cfg
+COPY test/assets/ /var/miniwdl_aws_test_assets/
