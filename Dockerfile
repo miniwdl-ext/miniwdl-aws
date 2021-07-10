@@ -15,13 +15,13 @@ RUN pip3 install --upgrade \
         boto3 \
         requests
 
-# miniwdl_plugin_aws
-COPY ./ /tmp/miniwdl_plugin_aws/
-RUN bash -c 'cd /tmp/miniwdl_plugin_aws && pip3 install .'
+# miniwdl-aws
+COPY ./ /tmp/miniwdl-aws/
+RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 
 # cleanup (for squashed image)
 RUN yum clean all && rm -rf /tmp/miniwdl*
 
 # boilerplate configuration file & test assets
-COPY miniwdl_aws.cfg /etc/xdg/miniwdl.cfg
+COPY miniwdl-aws.cfg /etc/xdg/miniwdl.cfg
 COPY test/assets/ /var/miniwdl_aws_test_assets/

@@ -34,7 +34,7 @@ def batch_miniwdl(aws_batch, args, environment=None, upload=None, cache=False):
     Submit & await a Batch job to run cmd in the miniwdl_aws container (usually ~miniwdl run~
     to launch other Batch jobs in turn)
     """
-    cmd = ["python3", "-m", "miniwdl_plugin_aws"]
+    cmd = ["python3", "-m", "miniwdl_aws"]
     cmd.extend(args)
     cmd.append("--follow")
     if not cache:
@@ -83,7 +83,7 @@ def get_s3uri(uri):
 
 def test_miniwdl_run_self_test(aws_batch):
     subprocess.run(
-        ["python3", "-m", "miniwdl_plugin_aws", "--follow", "--self-test", "--no-cache"],
+        ["python3", "-m", "miniwdl_aws", "--follow", "--self-test", "--no-cache"],
         cwd=os.path.dirname(os.path.dirname(__file__)),
         check=True,
     )
