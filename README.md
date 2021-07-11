@@ -6,19 +6,17 @@ This miniwdl plugin enables it to submit AWS Batch jobs to execute WDL tasks. It
 
 ## Use within Amazon SageMaker Studio
 
-Start with the companion **miniwdl-aws-studio** (TODO: link) recipe to install miniwdl for interactive use within [**Amazon SageMaker Studio**](https://aws.amazon.com/sagemaker/studio/), which provides a cloud web interface with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebook features to further analyze the outputs.
+Start with the companion **miniwdl-aws-studio** (TODO: link) recipe to install miniwdl for interactive use within [**Amazon SageMaker Studio**](https://aws.amazon.com/sagemaker/studio/), a cloud web application with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
 
 That's the best way to try miniwdl-aws and get familiar with how it uses Batch and EFS. Read on for non-interactive deployment, which is a bit more complicated.
 
 ## Unattended operations
 
-For non-interactive use, a command-line wrapper `miniwdl_submit_awsbatch` *launches miniwdl in its own small Batch job* to orchestrate the workflow. This **workflow job** then spawns **task jobs** as needed, without needing the submitting computer (e.g. your laptop) to remain connected for the duration. Separate Batch compute environments handle workflow & task jobs, using lightweight [Fargate](https://docs.aws.amazon.com/batch/latest/userguide/fargate.html) resources for workflow jobs. (See below for detailed infra specs.)
-
-Given the EFS-centric I/O model, you'll also need a way to manage the filesystem contents remotely. Deploy an instance or container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
+For non-interactive use, a command-line wrapper `miniwdl-aws-submit` *launches miniwdl in its own small Batch job* to orchestrate the workflow. This **workflow job** then spawns **task jobs** as needed, without needing the submitting computer (e.g. your laptop) to remain connected for the duration. Separate Batch compute environments handle workflow & task jobs, using lightweight [Fargate](https://docs.aws.amazon.com/batch/latest/userguide/fargate.html) resources for workflow jobs. (See below for detailed infra specs.)
 
 ### Submitting workflow jobs
 
-First `pip3 install miniwdl-aws` locally to make the `miniwdl_submit_awsbatch` program available. The following example launches a [viral genome assembly](https://github.com/broadinstitute/viral-pipelines/) that should run in 10-15 minutes:
+First `pip3 install miniwdl-aws` locally to make the `miniwdl-aws-submit` program available. The following example launches a [viral genome assembly](https://github.com/broadinstitute/viral-pipelines/) that should run in 10-15 minutes:
 
 ```
 miniwdl-aws-submit \
@@ -44,16 +42,20 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 
 Adding `--wait` makes the tool await the workflow job's success or failure, reproducing miniwdl's exit code. `--follow` does the same and also live-streams the workflow log. Without `--wait` or `--follow`, the tool displays the workflow job UUID and exits immediately.
 
-Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl-aws.cfg](miniwdl-aws.cfg) for various options preconfigured in the workflow job container.
+Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl_aws.cfg](miniwdl_aws.cfg) for various options preconfigured in the workflow job container.
 
 ## Run directories on EFS
 
-Miniwdl runs the workflow in a directory beneath `/mnt/efs/miniwdl_run` (override with `--dir`). The outputs also remain cached there for potential reuse in future runs. To begin with you can manage these directories manually, as alluded above, but you can also automate their cleanup by setting `--s3upload` and:
+Miniwdl runs the workflow in a directory beneath `/mnt/efs/miniwdl_run` (override with `--dir`). The outputs also remain cached there for potential reuse in future runs.
+
+Given the EFS-centric I/O model, you'll need a way to manage the filesystem contents remotely. Deploy an instance or container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
+
+You can also automate cleanup of EFS run directories by setting `miniwdl-aws-submit --s3upload` and:
 
 * `--delete-after success` to delete the run directory immediately after successful output upload
 * `--delete-after failure` to delete the directory after failure
 * `--delete-after always` to delete it in either case
-* (or set environment variable `MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER`)
+* (or set environment variable `MINIWDL__AWS__DELETE_AFTER_S3_UPLOAD`)
 
 Deleting a run directory after success prevents the outputs from being reused in future runs. Deleting it after failures can make debugging more difficult (although logs are retained, see below).
 
@@ -63,7 +65,7 @@ If the terminal log isn't available (through Studio or `miniwdl_submit_awsbatch 
 
 Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html) under the `/aws/batch/job` group and a log stream name reported in miniwdl's log. Using `miniwdl_submit_awsbatch`, the workflow job's log is also forwarded. CloudWatch Logs indexes the logs for structured search through the AWS Console & API.
 
-An infrastructure misconfiguration might prevent the EFS or CloudWatch logs from being written at all. Then use the AWS Batch console/API to find status messages for the workflow or task jobs.
+Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
 ## Appendix: expected AWS infrastructure
 

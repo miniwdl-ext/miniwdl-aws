@@ -121,7 +121,7 @@ def miniwdl_submit_awsbatch(argv):
     args.delete_after = (
         args.delete_after.strip().lower()
         if args.delete_after
-        else os.environ.get("MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER", None)
+        else os.environ.get("MINIWDL__AWS__DELETE_AFTER_S3_UPLOAD", None)
     )
     if args.self_test:
         self_test_dir = (
