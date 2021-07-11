@@ -21,7 +21,7 @@ Given the EFS-centric I/O model, you'll also need a way to manage the filesystem
 First `pip3 install miniwdl-aws` locally to make the `miniwdl_submit_awsbatch` program available. The following example launches a [viral genome assembly](https://github.com/broadinstitute/viral-pipelines/) that should run in 10-15 minutes:
 
 ```
-miniwdl_submit_awsbatch \
+miniwdl-aws-submit \
   https://github.com/broadinstitute/viral-pipelines/raw/v2.1.28.0/pipes/WDL/workflows/assemble_refbased.wdl \
   reads_unmapped_bams=https://github.com/broadinstitute/viral-pipelines/raw/v2.1.19.0/test/input/G5012.3.testreads.bam \
   reference_fasta=https://github.com/broadinstitute/viral-pipelines/raw/v2.1.19.0/test/input/ebov-makona.fasta \
@@ -29,7 +29,8 @@ miniwdl_submit_awsbatch \
   --workflow-queue miniwdl_workflow \
   --task-queue miniwdl_task \
   --fsap fsap-xxxx \
-  --s3upload s3://MY_BUCKET/assemble_refbased_test
+  --s3upload s3://MY_BUCKET/assemble_refbased_test \
+  --follow
 ```
 
 The command line resembles `miniwdl run`'s with extra AWS-related arguments:
@@ -41,9 +42,9 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 | `--fsap` | `MINIWDL__AWS__FSAP` | [EFS Access Point](https://docs.aws.amazon.com/efs/latest/ug/efs-access-points.html) ID, which workflow and task jobs will mount at `/mnt/efs` |
 | `--s3upload` | | (optional) S3 URI prefix under which to upload the workflow products, including the log and output files |
 
-Adding `--wait` makes the tool await the workflow job's success or failure, reproducing miniwdl's exit code. `--follow` does the same and also live-streams the workflow log.
+Adding `--wait` makes the tool await the workflow job's success or failure, reproducing miniwdl's exit code. `--follow` does the same and also live-streams the workflow log. Without `--wait` or `--follow`, the tool displays the workflow job UUID and exits immediately.
 
-Arguments not consumed by `miniwdl_submit_awsbatch` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl-aws.cfg](miniwdl-aws.cfg) for various options preconfigured in the workflow job container.
+Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl-aws.cfg](miniwdl-aws.cfg) for various options preconfigured in the workflow job container.
 
 ## Run directories on EFS
 

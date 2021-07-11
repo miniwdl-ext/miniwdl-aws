@@ -1,6 +1,6 @@
 """
 miniwdl_submit_awsbatch CLI entry point (console script) to submit a miniwdl "workflow job" to an
-AWS Batch queue, which will invoke miniwdl_run_s3upload to run the workflow (spawning additional
+AWS Batch queue, which will invoke miniwdl-run-s3upload to run the workflow (spawning additional
 Batch jobs as needed to execute tasks). This is typically used on-laptop to kick off workflows,
 without the laptop needing to stay on/connected. It can also wait for the workflow job to complete
 and stream its logs.
@@ -147,8 +147,8 @@ def miniwdl_submit_awsbatch(argv):
             except ValueError:
                 pass
             args.name = ("miniwdl_run_" + args.name)[:128]
-        # pass most arguments through to miniwdl_run_s3upload inside workflow job
-        miniwdl_run_cmd = ["miniwdl_run_s3upload"] + unused_args
+        # pass most arguments through to miniwdl-run-s3upload inside workflow job
+        miniwdl_run_cmd = ["miniwdl-run-s3upload"] + unused_args
         miniwdl_run_cmd.extend(["--dir", args.dir])
         miniwdl_run_cmd.extend(["--s3upload", args.s3upload] if args.s3upload else [])
         miniwdl_run_cmd.extend(["--delete-after", args.delete_after] if args.delete_after else [])

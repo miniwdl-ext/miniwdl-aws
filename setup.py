@@ -13,8 +13,8 @@ setup(
     entry_points={
         "miniwdl.plugin.container_backend": ["aws_batch_job = miniwdl_aws:BatchJob"],
         "console_scripts": [
-            "miniwdl_run_s3upload = miniwdl_aws:miniwdl_run_s3upload",
-            "miniwdl_submit_awsbatch = miniwdl_aws.__main__:main",
+            "miniwdl-run-s3upload = miniwdl_aws:miniwdl_run_s3upload",
+            "miniwdl-aws-submit = miniwdl_aws.__main__:main",
         ],
     },
 )
