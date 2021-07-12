@@ -79,6 +79,7 @@ Requirements:
         * spot instances (including `AmazonEC2SpotFleetTaggingRole`)
         * instance role
             * `service-role/AmazonEC2ContainerServiceforEC2Role`
+            * `AmazonElasticFileSystemClientReadWriteAccess`
             * `AmazonEC2ContainerRegistryReadOnly`
             * `s3:Get*`, `s3:List*` on any desired S3 buckets
             * `s3:Put*` on S3 bucket(s) for `--s3upload`
