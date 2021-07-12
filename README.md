@@ -6,9 +6,9 @@ This miniwdl plugin enables it to submit AWS Batch jobs to execute WDL tasks. It
 
 ## Use within Amazon SageMaker Studio
 
-Start with the companion **miniwdl-aws-studio** (TODO: link) recipe to install miniwdl for interactive use within [**Amazon SageMaker Studio**](https://aws.amazon.com/sagemaker/studio/), a cloud web application with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
+Start with the companion [**miniwdl-aws-studio**](https://github.com/miniwdl-ext/miniwdl-aws-studio) recipe to install miniwdl for interactive use within [Amazon SageMaker Studio](https://aws.amazon.com/sagemaker/studio/), a web IDE with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
 
-That's the best way to try miniwdl-aws and get familiar with how it uses Batch and EFS. Read on for non-interactive deployment, which is a bit more complicated.
+That's the best way to try miniwdl-aws and get familiar with how it works with Batch and EFS. Read on for non-interactive deployment, which is a bit more complicated.
 
 ## Unattended operations
 
