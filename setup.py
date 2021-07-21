@@ -1,8 +1,9 @@
 from setuptools import setup, find_packages
+from version import get_version
 
 setup(
     name="miniwdl-aws",
-    version="0.1.0",  # TODO: detect git tag
+    version=get_version(),
     description="miniwdl AWS backend (Batch+EFS)",
     author="Wid L. Hacker",
     python_requires=">=3.6",

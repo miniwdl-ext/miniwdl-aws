@@ -1,2 +1,6 @@
 .vscode/
 __pycache__
+.eggs/
+RELEASE-VERSION
+dist/
+*.egg-info/
