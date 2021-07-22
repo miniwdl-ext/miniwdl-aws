@@ -1,10 +1,15 @@
 from setuptools import setup, find_packages
 from version import get_version
 
+with open("README.md") as fp:
+    long_description = fp.read()
+
 setup(
     name="miniwdl-aws",
     version=get_version(),
     description="miniwdl AWS backend (Batch+EFS)",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     author="Wid L. Hacker",
     python_requires=">=3.6",
     packages=find_packages(),

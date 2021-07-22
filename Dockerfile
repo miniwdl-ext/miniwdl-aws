@@ -4,7 +4,7 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2
 
 # dependencies
-RUN yum check-update && yum install -y \
+RUN yum check-update; yum install -y \
         python3-pip \
         awscli
 
