@@ -62,16 +62,13 @@ def miniwdl_run_s3upload():
     miniwdl = subprocess.run(cmd, stdout=subprocess.PIPE, env=miniwdl_env, check=False)
     sys.stdout.buffer.write(miniwdl.stdout)
 
-    # normalize S3_UPLOAD_FOLDER from environment
     if not args.s3upload:
+        # nothing to do
         print(
             "[miniwdl_run_s3upload] no setting for --s3upload / MINIWDL__AWS__S3_UPLOAD_FOLDER; exiting",
             file=sys.stderr,
         )
         end_log_and_exit(miniwdl.returncode)
-    s3_upload_folder = args.s3upload
-    if not s3_upload_folder.endswith("/"):
-        s3_upload_folder += "/"
 
     # read miniwdl standard output JSON
     try:
@@ -84,6 +81,11 @@ def miniwdl_run_s3upload():
             file=sys.stderr,
         )
         end_log_and_exit(miniwdl.returncode)
+
+    # append miniwdl's run name to S3_UPLOAD_FOLDER (unless the latter ends in '/')
+    s3_upload_folder = args.s3upload
+    if not s3_upload_folder.endswith("/"):
+        s3_upload_folder += os.path.basename(run_dir.rstrip("/")) + "/"
 
     # upload logs
     for p in (os.path.join(run_dir, fn) for fn in ("workflow.log", "task.log")):
@@ -142,9 +144,10 @@ def miniwdl_run_s3upload():
             return dict((k, rewrite(u)) for (k, u) in v.items())
         return v
 
+    rewritten_outputs = rewrite(miniwdl_json["outputs"])
     outputs_s3_json = os.path.join(run_dir, "outputs.s3.json")
     with open(outputs_s3_json + ".tmp", "w") as outfile:
-        print(json.dumps(rewrite(miniwdl_json["outputs"]), indent=2), file=outfile)
+        print(json.dumps(rewritten_outputs, indent=2), file=outfile)
     os.rename(outputs_s3_json + ".tmp", outputs_s3_json)
     subprocess.run(
         ["aws", "s3", "cp", "--no-progress", outputs_s3_json, s3_upload_folder + "outputs.json"],
@@ -154,6 +157,7 @@ def miniwdl_run_s3upload():
         "[miniwdl_run_s3upload] uploaded " + s3_upload_folder + "outputs.json",
         file=sys.stderr,
     )
+    print(json.dumps({"s3upload": s3_upload_folder, "outputs": rewritten_outputs}, indent=2))
     if args.delete_after in ("always", "success"):
         shutil.rmtree(run_dir)
         print(

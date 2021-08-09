@@ -27,7 +27,7 @@ miniwdl-aws-submit \
   --workflow-queue miniwdl_workflow \
   --task-queue miniwdl_task \
   --fsap fsap-xxxx \
-  --s3upload s3://MY_BUCKET/assemble_refbased_test \
+  --s3upload s3://MY_BUCKET/test \
   --follow
 ```
 
@@ -38,7 +38,9 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 | `--workflow-queue`  | `MINIWDL__AWS__WORKFLOW_QUEUE`| Batch job queue on which to schedule the *workflow* job |
 | `--task-queue` | `MINIWDL__AWS__TASK_QUEUE` | Batch job queue on which to schedule *task* jobs |
 | `--fsap` | `MINIWDL__AWS__FSAP` | [EFS Access Point](https://docs.aws.amazon.com/efs/latest/ug/efs-access-points.html) ID, which workflow and task jobs will mount at `/mnt/efs` |
-| `--s3upload` | | (optional) S3 URI prefix under which to upload the workflow products, including the log and output files |
+| `--s3upload` | | (optional) S3 folder URI under which to upload the workflow products, including the log and output files |
+
+Unless `--s3upload` ends with /, one more subfolder is added to the uploaded URI prefix, equal to miniwdl's automatic timestamp-prefixed run name. If it does end in /, then the uploads go directly into/under that folder (and a repeat invocation would be expected to overwrite them).
 
 Adding `--wait` makes the tool await the workflow job's success or failure, reproducing miniwdl's exit code. `--follow` does the same and also live-streams the workflow log. Without `--wait` or `--follow`, the tool displays the workflow job UUID and exits immediately.
 
@@ -61,7 +63,7 @@ Deleting a run directory after success prevents the outputs from being reused in
 
 ## Logs & troubleshooting
 
-If the terminal log isn't available (through Studio or `miniwdl_submit_awsbatch --follow`) to trace a workflow failure, look for miniwdl's usual log files written in the run directory on EFS.
+If the terminal log isn't available (through Studio or `miniwdl_submit_awsbatch --follow`) to trace a workflow failure, look for miniwdl's usual log files written in the run directory on EFS or copied to S3.
 
 Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html) under the `/aws/batch/job` group and a log stream name reported in miniwdl's log. Using `miniwdl_submit_awsbatch`, the workflow job's log is also forwarded. CloudWatch Logs indexes the logs for structured search through the AWS Console & API.
 
