@@ -111,6 +111,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         cls._resource_limits = {"cpu": 64, "mem_bytes": 261992870916}
         cls._submit_lock = threading.Lock()
         cls._last_submit_time = [0.0]
+        cls._init_time = time.time()
         cls._describer = BatchJobDescriber()
         logger.info(
             _(
@@ -176,7 +177,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                     with self._submit_lock:
                         if terminating():
                             raise WDL.runtime.Terminated(quiet=True)
-                        if time.time() - self._last_submit_time[0] >= submit_period:
+                        if (
+                            time.time() - self._last_submit_time[0]
+                            >= submit_period * self._submit_period_multiplier()
+                        ):
                             job_id = self._submit_batch_job(logger, cleanup, aws_batch, command)
                             self._last_submit_time[0] = time.time()
                             break
@@ -396,6 +400,15 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                     )
                 )
         return exit_code
+
+    def _submit_period_multiplier(self):
+        if self._describer.jobs:
+            b = self.cfg.get_float("aws", "submit_period_b")
+            if b > 0:
+                t = time.time() - self._init_time
+                c = self.cfg.get_float("aws", "submit_period_c")
+                return max(1.0, c - t / b)
+        return 1.0
 
 
 class BatchJobDescriber:
