@@ -69,7 +69,7 @@ Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amaz
 
 Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
-## Appendix: expected AWS infrastructure
+## Appendix 1: expected AWS infrastructure
 
 Requirements:
 
@@ -115,3 +115,16 @@ Recommendations:
     * Temporarily provision throughput if starting an intensive workload without much data already stored
 * Use non-default VPC security group for EFS & compute environments
     * EFS must be accessible to all containers through TCP port 2049
+
+## Appendix 2: running tests
+
+In an AWS-credentialed terminal session,
+
+```
+MINIWDL__AWS__FSAP=fsap-xxxx \
+MINIWDL__AWS__WORKFLOW_QUEUE=WorkflowJobQueueName \
+MINIWDL__AWS__TASK_QUEUE=TaskJobQueueName \
+test/run_tests.sh
+```
+
+This builds the requisite Docker image from the current code revision and pushes it to an ECR repository (which must be prepared once by `aws ecr create-repository --repository-name miniwdl-aws`). To test an image from the [GitHub public registry](https://github.com/miniwdl-ext/miniwdl-aws/pkgs/container/miniwdl-aws) or some other version, set `MINIWDL__AWS__WORKFLOW_IMAGE` to the desired tag.
