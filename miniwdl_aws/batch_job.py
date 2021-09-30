@@ -251,9 +251,13 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         cleanup.callback(deregister, logger, aws_batch, job_def_handle)
 
         job_tags = {}
-        # TODO: set a tag to indicate that this job is a retry of another
         if self.cfg.has_option("aws", "job_tags"):
             job_tags = self.cfg.get_dict("aws", "job_tags")
+        if "AWS_BATCH_JOB_ID" in os.environ:
+            # If we find ourselves running inside an AWS Batch job, tag the new job identifying
+            # ourself as the "parent" job.
+            job_tags["AWS_BATCH_PARENT_JOB_ID"] = os.environ["AWS_BATCH_JOB_ID"]
+        # TODO: set a tag to indicate that this job is a retry of another
         job = aws_batch.submit_job(
             jobName=job_name,
             jobQueue=self._job_queue,

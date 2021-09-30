@@ -4,6 +4,8 @@
 
 This miniwdl plugin enables it to submit AWS Batch jobs to execute WDL tasks. It uses EFS for work-in-progress file I/O, with optional S3 rails for workflow-level I/O.
 
+The following assumes familiarity with [local use of `miniwdl run`](https://miniwdl.readthedocs.io/en/latest/getting_started.html).
+
 ## Use within Amazon SageMaker Studio
 
 Start with the companion [**miniwdl-aws-studio**](https://github.com/miniwdl-ext/miniwdl-aws-studio) recipe to install miniwdl for interactive use within [Amazon SageMaker Studio](https://aws.amazon.com/sagemaker/studio/), a web IDE with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
@@ -127,4 +129,4 @@ MINIWDL__AWS__TASK_QUEUE=TaskJobQueueName \
 test/run_tests.sh
 ```
 
-This builds the requisite Docker image from the current code revision and pushes it to an ECR repository (which must be prepared once by `aws ecr create-repository --repository-name miniwdl-aws`). To test an image from the [GitHub public registry](https://github.com/miniwdl-ext/miniwdl-aws/pkgs/container/miniwdl-aws) or some other version, set `MINIWDL__AWS__WORKFLOW_IMAGE` to the desired tag.
+This builds the requisite Docker image from the current code revision and pushes it to an ECR repository (which must be prepared once with `aws ecr create-repository --repository-name miniwdl-aws`). To test an image from the [GitHub public registry](https://github.com/miniwdl-ext/miniwdl-aws/pkgs/container/miniwdl-aws) or some other version, set `MINIWDL__AWS__WORKFLOW_IMAGE` to the desired tag.
