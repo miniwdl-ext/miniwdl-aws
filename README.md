@@ -10,6 +10,8 @@ The following assumes familiarity with [local use of `miniwdl run`](https://mini
 
 Start with the companion [**miniwdl-aws-studio**](https://github.com/miniwdl-ext/miniwdl-aws-studio) recipe to install miniwdl for interactive use within [Amazon SageMaker Studio](https://aws.amazon.com/sagemaker/studio/), a web IDE with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
 
+[<img width="985" alt="image" src="https://user-images.githubusercontent.com/356550/135670945-62ccb938-4195-4537-8eaf-9a0d57f97ea1.png">](https://github.com/miniwdl-ext/miniwdl-aws-studio)
+
 That's the best way to try miniwdl-aws and get familiar with how it works with Batch and EFS. Read on for non-interactive deployment, which is a bit more complicated.
 
 ## Unattended operations
