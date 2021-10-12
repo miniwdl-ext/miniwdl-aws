@@ -65,6 +65,26 @@ You can also automate cleanup of EFS run directories by setting `miniwdl-aws-sub
 
 Deleting a run directory after success prevents the outputs from being reused in future runs. Deleting it after failures can make debugging more difficult (although logs are retained, see below).
 
+### Security note on file system isolation
+
+Going through AWS Batch & EFS, miniwdl can't enforce the strict file system isolation between WDL task containers that it does locally. All the AWS Batch containers have read/write access to the entire EFS file system (as viewed through the access point), not only their initial working directory.
+
+This is usually benign, because WDL tasks should only read their declared inputs and write into their respective working/temporary directories. But poorly- or maliciously-written tasks could read & write files elsewhere on EFS, even changing their own input files or those of other tasks. This risks unintentional side-effects or worse security hazards from untrusted code.
+
+To mitigate this, test workflows thoroughly using the local backend, which strictly isolates task containers' file systems. If WDL tasks insist on modifying their input files in place, then `--copy-input-files` can unblock them (at a cost in time, space, and IOPS). Lastly, avoid using untrusted WDL code or container images; but if they're necessary, then use a separate EFS access point and restrict the IAM and network configuration for the AWS Batch containers appropriately.
+
+### EFS performance considerations
+
+To scale up to larger workloads, it's important to study AWS documentation on EFS [bursting mode](https://docs.aws.amazon.com/efs/latest/ug/performance.html#throughput-modes) and [performance monitoring](https://docs.aws.amazon.com/efs/latest/ug/monitoring-cloudwatch.html). Like any network file system, EFS throughput limits can cause bottlenecks; and worse, burst credit exhaustion can effectively freeze a workflow.
+
+Management tips:
+
+* Monitor file system throughput limits and burst credits in the EFS area of the AWS Console.
+* Store large datasets on EFS in advance (to the extent affordable), increasing its burst throughput and credits.
+* Spread out separate workflow runs over time and/or across multiple EFS file systems.
+* Temporarily provision higher throughput than available from bursting mode (24-hour minimum provisioning commitment).
+* Configure miniwdl and/or AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
+
 ## Logs & troubleshooting
 
 If the terminal log isn't available (through Studio or `miniwdl-submit-awsbatch --follow`) to trace a workflow failure, look for miniwdl's usual log files written in the run directory on EFS or copied to S3.
@@ -116,7 +136,6 @@ Recommendations:
     * Create in One Zone mode, and restrict compute environments to the same zone (trading off availability for cost)
     * Create in Max I/O mode
     * Configure EFS Access Point to use a nonzero user ID, with an owned filesystem root directory
-    * Temporarily provision throughput if starting an intensive workload without much data already stored
 * Use non-default VPC security group for EFS & compute environments
     * EFS must be accessible to all containers through TCP port 2049
 
