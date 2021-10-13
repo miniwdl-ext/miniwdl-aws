@@ -31,7 +31,7 @@ jobs:
         python3 setup.py --version  # generate RELEASE-VERSION
 
         REPO="ghcr.io/miniwdl-ext/miniwdl-aws"
-        TAG="$(git describe --long --tags --always --dirty)"
+        TAG="$(git describe --tags --always --dirty)"
 
         docker pull public.ecr.aws/amazonlinux/amazonlinux:2
         docker build -t "${REPO}:${TAG}" .

@@ -18,14 +18,6 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 
 
 def miniwdl_submit_awsbatch(argv):
-    aws_region_name = detect_aws_region(None)
-    if not aws_region_name:
-        print(
-            "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     parser = argparse.ArgumentParser(
         prog="miniwdl_submit_awsbatch",
         description="Launch `miniwdl run` on AWS Batch (+ EFS at /mnt/efs), itself launching additional Batch jobs to execute WDL tasks. Passed-through arguments to `miniwdl run` should refer to s3:// or /mnt/efs/ input paths, rather than the local filesystem.",
@@ -58,7 +50,6 @@ def miniwdl_submit_awsbatch(argv):
     group.add_argument(
         "--image",
         help="miniwdl-aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
-        # TODO: default from some public registry
     )
     parser.add_argument(
         "--no-env", action="store_true", help="do not pass through MINIWDL__* environment variables"
@@ -92,6 +83,15 @@ def miniwdl_submit_awsbatch(argv):
     # TODO: miniwdl check the source code
 
     args, unused_args = parser.parse_known_args(argv[1:])
+
+    aws_region_name = detect_aws_region(None)
+    if not aws_region_name:
+        print(
+            "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     args.fsap = args.fsap if args.fsap else os.environ.get("MINIWDL__AWS__FSAP", "")
     args.workflow_queue = (
         args.workflow_queue
@@ -156,8 +156,18 @@ def miniwdl_submit_awsbatch(argv):
     args.name = randomize_job_name(args.name)
     args.image = args.image if args.image else os.environ.get("MINIWDL__AWS__WORKFLOW_IMAGE", None)
     if not args.image:
-        # TODO: public default image
-        args.image = f"{boto3.client('ecr', region_name=aws_region_name).describe_registry()['registryId']}.dkr.ecr.{aws_region_name}.amazonaws.com/miniwdl-aws"
+        import importlib_metadata
+
+        try:
+            args.image = "ghcr.io/miniwdl-ext/miniwdl-aws:v" + importlib_metadata.version(
+                "miniwdl-aws"
+            )
+        except importlib_metadata.PackageNotFoundError:
+            print(
+                "Failed to detect miniwdl Docker image version tag; set explicitly with --image or MINIWDL__AWS__WORKFLOW_IMAGE",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
     region_name = detect_aws_region(None)
