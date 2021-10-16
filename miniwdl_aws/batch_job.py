@@ -407,8 +407,12 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
     def _submit_period_multiplier(self):
         if self._describer.jobs:
-            b = self.cfg.get_float("aws", "submit_period_b")
-            if b > 0:
+            b = (
+                self.cfg.get_float("aws", "submit_period_b")
+                if self.cfg.has_option("aws", "submit_period_b")
+                else 0.0
+            )
+            if b > 0.0:
                 t = time.time() - self._init_time
                 c = self.cfg.get_float("aws", "submit_period_c")
                 return max(1.0, c - t / b)
