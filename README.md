@@ -75,15 +75,16 @@ To mitigate this, test workflows thoroughly using the local backend, which stric
 
 ### EFS performance considerations
 
-To scale up to larger workloads, it's important to study AWS documentation on EFS [bursting mode](https://docs.aws.amazon.com/efs/latest/ug/performance.html#throughput-modes) and [performance monitoring](https://docs.aws.amazon.com/efs/latest/ug/monitoring-cloudwatch.html). Like any network file system, EFS throughput limits can cause bottlenecks; and worse, burst credit exhaustion can effectively freeze a workflow.
+To scale up to larger workloads, it's important to study AWS documentation on EFS [performance](https://docs.aws.amazon.com/efs/latest/ug/performance.html) and [monitoring](https://docs.aws.amazon.com/efs/latest/ug/monitoring-cloudwatch.html). Like any network file system, EFS limits on throughput and IOPS can cause bottlenecks; and worse, throughput burst credit exhaustion can effectively freeze a workflow.
 
 Management tips:
 
-* Monitor file system throughput limits and burst credits in the EFS area of the AWS Console.
-* Store large datasets on EFS in advance (to the extent affordable), increasing its burst throughput and credits.
-* Spread out separate workflow runs over time and/or across multiple EFS file systems.
-* Temporarily provision higher throughput than available from bursting mode (24-hour minimum provisioning commitment).
-* Configure miniwdl and/or AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
+* Monitor file system throughput limits, IOPS, and burst credits in the EFS area of the AWS Console.
+* Create the file system in "Max I/O" performance mode.
+* Stage large datasets onto the file system well in advance, increasing the available burst throughput.
+* Temporarily provision higher throughput than bursting mode provides (24-hour minimum provisioning commitment).
+* Configure miniwdl and AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
+* Spread out separate workflow runs over time or across multiple EFS file systems.
 
 ## Logs & troubleshooting
 

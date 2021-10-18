@@ -357,7 +357,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                     # TODO: base TaskContainer should handle this, for separation of concerns
                     cleanup.enter_context(
                         WDL.runtime._statusbar.task_running(
-                            self.runtime_values.get("cpu", 0),
+                            self.runtime_values.get("cpu", 1),
                             self.runtime_values.get("memory_reservation", 0),
                         )
                     )
