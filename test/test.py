@@ -29,7 +29,7 @@ def aws_batch():
     return boto3.client("batch", region_name=os.environ["AWS_DEFAULT_REGION"])
 
 
-def batch_miniwdl(aws_batch, args, environment=None, upload=None, cache=False):
+def batch_miniwdl(aws_batch, args, env=None, upload=None, cache=False):
     """
     Submit & await a Batch job to run cmd in the miniwdl_aws container (usually ~miniwdl run~
     to launch other Batch jobs in turn)
@@ -45,7 +45,7 @@ def batch_miniwdl(aws_batch, args, environment=None, upload=None, cache=False):
         cmd.extend(["--s3upload", upload])
 
     exit_code = subprocess.run(
-        cmd, cwd=os.path.dirname(os.path.dirname(__file__)), check=False
+        cmd, cwd=os.path.dirname(os.path.dirname(__file__)), check=False, env=env
     ).returncode
 
     if exit_code != 0:
@@ -98,6 +98,8 @@ def test_s3_folder():
 
 
 def test_retry_streams(aws_batch, test_s3_folder):
+    env = dict(os.environ)
+    env["MINIWDL__AWS__RETRY_WAIT"] = "1"
     rslt = batch_miniwdl(
         aws_batch,
         [
@@ -107,6 +109,7 @@ def test_retry_streams(aws_batch, test_s3_folder):
             "--verbose",
         ],
         upload=test_s3_folder + "test_retry_streams/",
+        env=env,
     )
     assert rslt["success"]
     assert len(rslt["outputs"]["test_retry_streams.messages"]) == 4

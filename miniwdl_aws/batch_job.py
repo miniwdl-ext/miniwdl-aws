@@ -145,8 +145,8 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         # Since we aren't virtualizing the in-container paths as noted above, always use the same
         # working directory on task retries, instead of the base class behavior of appending the
         # try counter (on the host side). This loses some robustness to a split-brain condition
-        # where the previous try is actually still running when we start the retry. We'll assume
-        # Batch prevents that.
+        # where the previous try is actually still running when we start the retry.
+        # (see also retry_wait)
         return os.path.join(self.host_dir, "work")
 
     def host_stdout_txt(self):
@@ -156,6 +156,20 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         return os.path.join(self.host_dir, "stderr.txt")
 
     def reset(self, logger) -> None:
+        cooldown = (
+            self.cfg.get_float("aws", "retry_wait")
+            if self.cfg.has_option("aws", "retry_wait")
+            else 0.0
+        )
+        if cooldown > 0.0:
+            logger.info(
+                _(
+                    "waiting to retry per configuration [aws] retry_wait",
+                    seconds=cooldown,
+                )
+            )
+            time.sleep(cooldown)
+
         shutil.rmtree(self.host_work_dir())
         super().reset(logger)
 
