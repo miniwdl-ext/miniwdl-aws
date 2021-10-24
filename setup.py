@@ -14,7 +14,7 @@ setup(
     python_requires=">=3.6",
     packages=find_packages(),
     setup_requires=["reentry"],
-    install_requires=["miniwdl>=1.3.2", "boto3>=1.17", "requests"],
+    install_requires=["miniwdl>=1.3.3", "boto3>=1.17", "requests"],
     reentry_register=True,
     entry_points={
         "miniwdl.plugin.container_backend": ["aws_batch_job = miniwdl_aws:BatchJob"],

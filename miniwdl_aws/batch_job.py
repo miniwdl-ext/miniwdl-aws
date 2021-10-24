@@ -7,7 +7,6 @@ workers.
 import os
 import math
 import time
-import shutil
 import threading
 import heapq
 from contextlib import ExitStack
@@ -16,7 +15,7 @@ import botocore
 import WDL
 import WDL.runtime.task_container
 import WDL.runtime._statusbar
-from WDL._util import PygtailLogger
+from WDL._util import PygtailLogger, rmtree_atomic, symlink_force
 from WDL._util import StructuredLogMessage as _
 from ._util import (
     detect_aws_region,
@@ -170,7 +169,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             )
             time.sleep(cooldown)
 
-        shutil.rmtree(self.host_work_dir())
+        rmtree_atomic(self.host_work_dir())
         super().reset(logger)
 
     def _run(self, logger, terminating, command):
@@ -237,7 +236,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 "command": [
                     "/bin/bash",
                     "-c",
-                    f"cd {self.container_dir}/work && bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2)",
+                    f"cd {self.container_dir}/work && bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) && sync",
                 ],
                 "resourceRequirements": [
                     {"type": "VCPU", "value": str(vcpu)},
@@ -334,7 +333,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             if link_dn not in link_dirs_made:
                 os.makedirs(link_dn)
                 link_dirs_made.add(link_dn)
-            os.symlink(host_fn, container_fn)
+            symlink_force(host_fn, container_fn)
 
         return volumes, mount_points
 
@@ -413,9 +412,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             if terminating():
                 aws_batch.terminate_job(jobId=job_id, reason="terminated by miniwdl")
                 raise WDL.runtime.Terminated(
-                    quiet=not self._observed_states.difference(
-                        {"SUBMITTED", "PENDING", "RUNNABLE", "STARTING"}
-                    )
+                    quiet=not self._observed_states.difference({"SUBMITTED", "PENDING", "RUNNABLE"})
                 )
         return exit_code
 
