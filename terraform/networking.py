@@ -16,9 +16,12 @@ class MiniwdlAwsNetworking(Construct):
     vpc: Vpc
     subnet: Subnet
     sg: SecurityGroup
+    availability_zone: str
 
     def __init__(self, scope: Construct, ns: str, availability_zone: str):
         super().__init__(scope, ns)
+
+        self.availability_zone = availability_zone
 
         self.vpc = Vpc(
             self,

@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import os
 from constructs import Construct
-from cdktf import App, TerraformStack
+from cdktf import App, TerraformStack, TerraformOutput
 from imports.aws import AwsProvider
 from imports.aws.efs import EfsFileSystem, EfsMountTarget, EfsAccessPoint, EfsAccessPointPosixUser
 from networking import MiniwdlAwsNetworking
+from roles import MiniwdlAwsRoles
+from batch import MiniwdlAwsBatch
 
 
 class MiniwdlAwsStack(TerraformStack):
@@ -13,6 +15,7 @@ class MiniwdlAwsStack(TerraformStack):
 
         AwsProvider(self, "aws", region="us-west-2")
         net = MiniwdlAwsNetworking(self, "miniwdl-aws-net", availability_zone=availability_zone)
+
         efs = EfsFileSystem(
             self,
             "miniwdl-aws-fs",
@@ -33,6 +36,14 @@ class MiniwdlAwsStack(TerraformStack):
             file_system_id=efs.id,
             posix_user=EfsAccessPointPosixUser(gid=0, uid=0),
         )
+
+        roles = MiniwdlAwsRoles(self, "miniwdl-aws-roles")
+        batch = MiniwdlAwsBatch(self, "miniwdl-aws-batch", net, roles)
+
+        TerraformOutput(self, "fs", value=efs.id)
+        TerraformOutput(self, "fsap", value=efsap.id)
+        TerraformOutput(self, "taskQueue", value=batch.task_queue.name)
+        TerraformOutput(self, "workflowQueue", value=batch.workflow_queue.name)
 
 
 app = App()
