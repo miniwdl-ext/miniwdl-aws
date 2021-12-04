@@ -236,7 +236,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 "command": [
                     "/bin/bash",
                     "-c",
-                    f"cd {self.container_dir}/work && bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) && sync",
+                    f"cd {self.container_dir}/work && bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2)",
                 ],
                 "resourceRequirements": [
                     {"type": "VCPU", "value": str(vcpu)},
@@ -414,6 +414,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 raise WDL.runtime.Terminated(
                     quiet=not self._observed_states.difference({"SUBMITTED", "PENDING", "RUNNABLE"})
                 )
+        for _root, _dirs, _files in os.walk(self.host_dir, followlinks=False):
+            # no-op traversal of working directory to refresh NFS metadata cache (speculative)
+            pass
+        poll_stderr()
         return exit_code
 
     def _submit_period_multiplier(self):
