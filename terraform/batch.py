@@ -32,9 +32,7 @@ class MiniwdlAwsBatch(Construct):
         task_launch_template = LaunchTemplate(
             self,
             "task-launch-template",
-            iam_instance_profile=LaunchTemplateIamInstanceProfile(
-                arn=task_instance_profile.arn
-            ),
+            iam_instance_profile=LaunchTemplateIamInstanceProfile(arn=task_instance_profile.arn),
             user_data=_task_instance_user_data,
         )
 

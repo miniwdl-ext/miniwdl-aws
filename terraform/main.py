@@ -25,9 +25,7 @@ class MiniwdlAwsStack(TerraformStack):
         super().__init__(scope, ns)
 
         AwsProvider(self, "aws", region="us-west-2")
-        net = MiniwdlAwsNetworking(
-            self, "miniwdl-aws-net", availability_zone=availability_zone
-        )
+        net = MiniwdlAwsNetworking(self, "miniwdl-aws-net", availability_zone=availability_zone)
 
         efs = EfsFileSystem(
             self,

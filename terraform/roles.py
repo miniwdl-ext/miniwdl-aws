@@ -88,9 +88,7 @@ class MiniwdlAwsRoles(Construct):
                     ]
                 }
             """.strip(),
-            managed_policy_arns=[
-                "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
-            ],
+            managed_policy_arns=["arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"],
         )
         self.spot_fleet_role = IamRole(
             self,
@@ -106,9 +104,7 @@ class MiniwdlAwsRoles(Construct):
         # These service-linked roles can be created only once per account, so we make them optional
         # cf. https://github.com/cloudposse/terraform-aws-elasticsearch/issues/5
         if create_spot_service_roles:
-            IamServiceLinkedRole(
-                self, "spot-service-role", aws_service_name="spot.amazonaws.com"
-            )
+            IamServiceLinkedRole(self, "spot-service-role", aws_service_name="spot.amazonaws.com")
             IamServiceLinkedRole(
                 self,
                 "spot-fleet-service-role",
