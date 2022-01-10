@@ -3,7 +3,12 @@ import os
 from constructs import Construct
 from cdktf import App, TerraformStack, TerraformOutput
 from imports.aws import AwsProvider
-from imports.aws.efs import EfsFileSystem, EfsMountTarget, EfsAccessPoint, EfsAccessPointPosixUser
+from imports.aws.efs import (
+    EfsFileSystem,
+    EfsMountTarget,
+    EfsAccessPoint,
+    EfsAccessPointPosixUser,
+)
 from networking import MiniwdlAwsNetworking
 from roles import MiniwdlAwsRoles
 from batch import MiniwdlAwsBatch
@@ -14,14 +19,17 @@ class MiniwdlAwsStack(TerraformStack):
         super().__init__(scope, ns)
 
         AwsProvider(self, "aws", region="us-west-2")
-        net = MiniwdlAwsNetworking(self, "miniwdl-aws-net", availability_zone=availability_zone)
+        net = MiniwdlAwsNetworking(
+            self, "miniwdl-aws-net", availability_zone=availability_zone
+        )
 
         efs = EfsFileSystem(
             self,
             "miniwdl-aws-fs",
             availability_zone_name=availability_zone,
             encrypted=True,
-            performance_mode="maxIO",
+            # desirable but unsupported for one-zone mode:
+            # performance_mode="maxIO",
         )
         EfsMountTarget(
             self,
@@ -48,7 +56,9 @@ class MiniwdlAwsStack(TerraformStack):
 
 app = App()
 MiniwdlAwsStack(
-    app, "miniwdl-aws-stack", availability_zone=os.environ["MINIWDL__AWS__AVAILABILITY_ZONE"]
+    app,
+    "miniwdl-aws-stack",
+    availability_zone=os.environ["MINIWDL__AWS__AVAILABILITY_ZONE"],
 )
 
 app.synth()

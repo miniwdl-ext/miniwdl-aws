@@ -48,7 +48,10 @@ class MiniwdlAwsNetworking(Construct):
             gateway_id=igw.id,
         )
         RouteTableAssociation(
-            self, "route-table-association", route_table_id=route_table.id, subnet_id=self.subnet.id
+            self,
+            "route-table-association",
+            route_table_id=route_table.id,
+            subnet_id=self.subnet.id,
         )
         self.sg = SecurityGroup(
             self,
@@ -56,7 +59,10 @@ class MiniwdlAwsNetworking(Construct):
             vpc_id=self.vpc.id,
             ingress=[
                 SecurityGroupIngress(
-                    from_port=0, to_port=0, protocol="-1", cidr_blocks=[self.vpc.cidr_block]
+                    from_port=0,
+                    to_port=0,
+                    protocol="-1",
+                    cidr_blocks=[self.vpc.cidr_block],
                 )
             ],
             egress=[

@@ -18,17 +18,17 @@ class MiniwdlAwsRoles(Construct):
                 {
                     "Version": "2012-10-17",
                     "Statement": [
-                    {
-                        "Action": "sts:AssumeRole",
-                        "Principal": {
-                        "Service": "ec2.amazonaws.com"
-                        },
-                        "Effect": "Allow",
-                        "Sid": ""
-                    }
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Principal": {
+                            "Service": "ec2.amazonaws.com"
+                            },
+                            "Effect": "Allow",
+                            "Sid": ""
+                        }
                     ]
                 }
-            """,
+            """.strip(),
             managed_policy_arns=[
                 "arn:aws:iam::aws:policy/" + p
                 for p in (
@@ -57,7 +57,7 @@ class MiniwdlAwsRoles(Construct):
                         }
                     ]
                 }
-            """,
+            """.strip(),
             managed_policy_arns=[
                 "arn:aws:iam::aws:policy/" + p
                 for p in (
@@ -78,30 +78,38 @@ class MiniwdlAwsRoles(Construct):
                 {
                     "Version": "2012-10-17",
                     "Statement": [
-                    {
-                        "Action": "sts:AssumeRole",
-                        "Effect": "Allow",
-                        "Principal": {
-                        "Service": "batch.amazonaws.com"
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                            "Service": "batch.amazonaws.com"
+                            }
                         }
-                    }
                     ]
-                },
-            """,
-            managed_policy_arns=["arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"],
+                }
+            """.strip(),
+            managed_policy_arns=[
+                "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+            ],
         )
         self.spot_fleet_role = IamRole(
             self,
             "spot-fleet-role",
             assume_role_policy="""
                 {"Version":"2012-10-17","Statement":[{"Sid":"","Effect":"Allow","Principal":{"Service":"spotfleet.amazonaws.com"},"Action":"sts:AssumeRole"}]}
-            """,
+            """.strip(),
             managed_policy_arns=[
                 "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
             ],
         )
 
-        IamServiceLinkedRole(self, "spot-service-role", aws_service_name="spot.amazonaws.com")
+        # TODO opt-out for these since they're not idempotent
+        # cf. https://github.com/cloudposse/terraform-aws-elasticsearch/issues/5
+        """
+        IamServiceLinkedRole(
+            self, "spot-service-role", aws_service_name="spot.amazonaws.com"
+        )
         IamServiceLinkedRole(
             self, "spot-fleet-service-role", aws_service_name="spotfleet.amazonaws.com"
         )
+        """

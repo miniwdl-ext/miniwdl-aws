@@ -1,3 +1,4 @@
+from base64 import b64encode
 from constructs import Construct
 from imports.aws.batch import (
     BatchComputeEnvironment,
@@ -5,7 +6,7 @@ from imports.aws.batch import (
     BatchComputeEnvironmentComputeResourcesLaunchTemplate,
     BatchJobQueue,
 )
-from imports.aws.ec2 import LaunchTemplate
+from imports.aws.ec2 import LaunchTemplate, LaunchTemplateIamInstanceProfile
 from imports.aws.iam import IamInstanceProfile
 from networking import MiniwdlAwsNetworking
 from roles import MiniwdlAwsRoles
@@ -16,7 +17,11 @@ class MiniwdlAwsBatch(Construct):
     workflow_queue: BatchJobQueue
 
     def __init__(
-        self, scope: Construct, ns: str, net: MiniwdlAwsNetworking, roles: MiniwdlAwsRoles
+        self,
+        scope: Construct,
+        ns: str,
+        net: MiniwdlAwsNetworking,
+        roles: MiniwdlAwsRoles,
     ):
         super().__init__(scope, ns)
 
@@ -27,7 +32,9 @@ class MiniwdlAwsBatch(Construct):
         task_launch_template = LaunchTemplate(
             self,
             "task-launch-template",
-            iam_instance_profile=task_instance_profile,
+            iam_instance_profile=LaunchTemplateIamInstanceProfile(
+                arn=task_instance_profile.arn
+            ),
             user_data=_task_instance_user_data,
         )
 
@@ -39,11 +46,12 @@ class MiniwdlAwsBatch(Construct):
             compute_resources=BatchComputeEnvironmentComputeResources(
                 subnets=[net.subnet.id],
                 security_group_ids=[net.sg.id],
-                max_vcpus=64,
+                max_vcpus=64,  # TODO: make configurable
                 instance_type=["m5d", "c5d", "r5d"],
                 type="SPOT",
                 allocation_strategy="SPOT_CAPACITY_OPTIMIZED",
                 spot_iam_fleet_role=roles.spot_fleet_role.arn,
+                instance_role=task_instance_profile.arn,
                 launch_template=BatchComputeEnvironmentComputeResourcesLaunchTemplate(
                     launch_template_id=task_launch_template.id
                 ),
@@ -67,7 +75,7 @@ class MiniwdlAwsBatch(Construct):
             type="MANAGED",
             compute_resources=BatchComputeEnvironmentComputeResources(
                 type="FARGATE",
-                max_vcpus=10,
+                max_vcpus=10,  # TODO: make configurable
                 subnets=[net.subnet.id],
                 security_group_ids=[net.sg.id],
             ),
@@ -88,7 +96,9 @@ class MiniwdlAwsBatch(Construct):
         )
 
 
-_task_instance_user_data = """#!/bin/bash
+_task_instance_user_data = b64encode(
+    """
+#!/bin/bash
 # To run on first boot of an EC2 instance with NVMe instance storage volumes:
 # 1) Assembles them into a RAID0 array, formats with XFS, and mounts to /mnt/scratch
 # 2) Replaces /var/lib/docker with a symlink to /mnt/scratch/docker so that docker images and
@@ -123,4 +133,5 @@ fi
 mkdir -p /mnt/scratch/docker
 ln -s /mnt/scratch/docker /var/lib/docker
 systemctl restart docker || true
-"""
+""".lstrip().encode()
+).decode("ascii")
