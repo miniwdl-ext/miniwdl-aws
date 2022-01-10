@@ -56,6 +56,7 @@ class MiniwdlAwsNetworking(Construct):
         self.sg = SecurityGroup(
             self,
             "security-group",
+            name_prefix="miniwdl-",
             vpc_id=self.vpc.id,
             ingress=[
                 SecurityGroupIngress(

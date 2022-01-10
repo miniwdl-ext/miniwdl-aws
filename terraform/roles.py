@@ -14,6 +14,7 @@ class MiniwdlAwsRoles(Construct):
         self.task_role = IamRole(
             self,
             "task-role",
+            name_prefix="wdl-tasks-",
             assume_role_policy="""
                 {
                     "Version": "2012-10-17",
@@ -43,6 +44,7 @@ class MiniwdlAwsRoles(Construct):
         self.workflow_role = IamRole(
             self,
             "workflow-role",
+            name_prefix="wdl-workflows-",
             assume_role_policy="""
                 {
                     "Version": "2012-10-17",
@@ -74,6 +76,7 @@ class MiniwdlAwsRoles(Construct):
         self.batch_role = IamRole(
             self,
             "batch-role",
+            name_prefix="wdl-batch-",
             assume_role_policy="""
                 {
                     "Version": "2012-10-17",
@@ -93,6 +96,7 @@ class MiniwdlAwsRoles(Construct):
         self.spot_fleet_role = IamRole(
             self,
             "spot-fleet-role",
+            name_prefix="wdl-spot-",
             assume_role_policy="""
                 {"Version":"2012-10-17","Statement":[{"Sid":"","Effect":"Allow","Principal":{"Service":"spotfleet.amazonaws.com"},"Action":"sts:AssumeRole"}]}
             """.strip(),
@@ -104,9 +108,11 @@ class MiniwdlAwsRoles(Construct):
         # These service-linked roles can be created only once per account, so we make them optional
         # cf. https://github.com/cloudposse/terraform-aws-elasticsearch/issues/5
         if create_spot_service_roles:
-            IamServiceLinkedRole(self, "spot-service-role", aws_service_name="spot.amazonaws.com")
+            IamServiceLinkedRole(
+                self, "spot-service-role", aws_service_name_prefix="spot.amazonaws.com"
+            )
             IamServiceLinkedRole(
                 self,
                 "spot-fleet-service-role",
-                aws_service_name="spotfleet.amazonaws.com",
+                aws_service_name_prefix="spotfleet.amazonaws.com",
             )

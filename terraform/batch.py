@@ -26,12 +26,13 @@ class MiniwdlAwsBatch(Construct):
         super().__init__(scope, ns)
 
         task_instance_profile = IamInstanceProfile(
-            self, "task-instance-profile", role=roles.task_role.name
+            self, "task-instance-profile", name_prefix="wdl-tasks-", role=roles.task_role.name
         )
 
         task_launch_template = LaunchTemplate(
             self,
             "task-launch-template",
+            name_prefix="wdl-tasks-",
             iam_instance_profile=LaunchTemplateIamInstanceProfile(arn=task_instance_profile.arn),
             user_data=_task_instance_user_data,
         )
@@ -39,7 +40,7 @@ class MiniwdlAwsBatch(Construct):
         task_ce = BatchComputeEnvironment(
             self,
             "task-compute-env",
-            compute_environment_name="miniwdl-task-compute",
+            compute_environment_name_prefix="wdl-tasks-",
             type="MANAGED",
             compute_resources=BatchComputeEnvironmentComputeResources(
                 subnets=[net.subnet.id],
@@ -69,7 +70,7 @@ class MiniwdlAwsBatch(Construct):
         workflow_ce = BatchComputeEnvironment(
             self,
             "workflow-compute-env",
-            compute_environment_name="miniwdl-workflow-compute",
+            compute_environment_name_prefix="wdl-workflows-",
             type="MANAGED",
             compute_resources=BatchComputeEnvironmentComputeResources(
                 type="FARGATE",

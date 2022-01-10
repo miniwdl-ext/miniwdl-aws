@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 from constructs import Construct
-from cdktf import App, TerraformStack, TerraformOutput
+from cdktf import App, TerraformStack, TerraformOutput, TerraformResourceLifecycle
 from imports.aws import AwsProvider
 from imports.aws.efs import (
     EfsFileSystem,
@@ -34,6 +34,7 @@ class MiniwdlAwsStack(TerraformStack):
             encrypted=True,
             # desirable but unsupported for one-zone mode:
             # performance_mode="maxIO",
+            lifecycle=TerraformResourceLifecycle(prevent_destroy=True),
         )
         EfsMountTarget(
             self,
