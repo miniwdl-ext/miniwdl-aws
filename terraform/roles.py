@@ -8,7 +8,7 @@ class MiniwdlAwsRoles(Construct):
     spot_fleet_role: IamRole
     batch_role: IamRole
 
-    def __init__(self, scope: Construct, ns: str):
+    def __init__(self, scope: Construct, ns: str, create_spot_service_roles: bool):
         super().__init__(scope, ns)
 
         self.task_role = IamRole(
@@ -103,13 +103,14 @@ class MiniwdlAwsRoles(Construct):
             ],
         )
 
-        # TODO opt-out for these since they're not idempotent
+        # These service-linked roles can be created only once per account, so we make them optional
         # cf. https://github.com/cloudposse/terraform-aws-elasticsearch/issues/5
-        """
-        IamServiceLinkedRole(
-            self, "spot-service-role", aws_service_name="spot.amazonaws.com"
-        )
-        IamServiceLinkedRole(
-            self, "spot-fleet-service-role", aws_service_name="spotfleet.amazonaws.com"
-        )
-        """
+        if create_spot_service_roles:
+            IamServiceLinkedRole(
+                self, "spot-service-role", aws_service_name="spot.amazonaws.com"
+            )
+            IamServiceLinkedRole(
+                self,
+                "spot-fleet-service-role",
+                aws_service_name="spotfleet.amazonaws.com",
+            )

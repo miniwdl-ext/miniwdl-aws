@@ -15,7 +15,13 @@ from batch import MiniwdlAwsBatch
 
 
 class MiniwdlAwsStack(TerraformStack):
-    def __init__(self, scope: Construct, ns: str, availability_zone: str):
+    def __init__(
+        self,
+        scope: Construct,
+        ns: str,
+        availability_zone: str,
+        create_spot_service_roles: bool = True,
+    ):
         super().__init__(scope, ns)
 
         AwsProvider(self, "aws", region="us-west-2")
@@ -45,7 +51,7 @@ class MiniwdlAwsStack(TerraformStack):
             posix_user=EfsAccessPointPosixUser(gid=0, uid=0),
         )
 
-        roles = MiniwdlAwsRoles(self, "miniwdl-aws-roles")
+        roles = MiniwdlAwsRoles(self, "miniwdl-aws-roles", create_spot_service_roles)
         batch = MiniwdlAwsBatch(self, "miniwdl-aws-batch", net, roles)
 
         TerraformOutput(self, "fs", value=efs.id)
@@ -59,6 +65,10 @@ MiniwdlAwsStack(
     app,
     "miniwdl-aws-stack",
     availability_zone=os.environ["MINIWDL__AWS__AVAILABILITY_ZONE"],
+    create_spot_service_roles=(
+        os.environ.get("SPOT_SERVICE_ROLES", "1").strip().lower()
+        not in ("0", "false", "f", "no", "n")
+    ),
 )
 
 app.synth()
