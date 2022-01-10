@@ -10,7 +10,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: deps
-      run: sudo pip3 install --system pre-commit black flake8 pylint
+      run: sudo pip3 install --system --upgrade pre-commit black flake8
     - name: pre-commit
       run: pre-commit run --all-files
 
