@@ -43,7 +43,9 @@ def miniwdl_submit_awsbatch(argv):
     )
     group = parser.add_argument_group("Workflow job provisioning")
     group.add_argument("--name", help="workflow job name [WDL filename]")
-    group.add_argument("--cpu", metavar="N", type=int, default=2, help="vCPUs for workflow job [2]")
+    group.add_argument(
+        "--cpu", metavar="N", type=str, default="1", help="vCPUs for workflow job [1]"
+    )
     group.add_argument(
         "--memory-GiB", metavar="N", type=int, default=4, help="memory for workflow job [4]"
     )
@@ -244,7 +246,7 @@ def miniwdl_submit_awsbatch(argv):
             "executionRoleArn": args.workflow_role,
             "jobRoleArn": args.workflow_role,
             "resourceRequirements": [
-                {"type": "VCPU", "value": str(args.cpu)},
+                {"type": "VCPU", "value": args.cpu},
                 {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
             ],
             "networkConfiguration": {"assignPublicIp": "ENABLED"},

@@ -43,7 +43,7 @@ class MiniwdlAwsBatch(Construct):
             compute_environment_name_prefix="wdl-tasks-",
             type="MANAGED",
             compute_resources=BatchComputeEnvironmentComputeResources(
-                subnets=[net.subnet.id],
+                subnets=[s.id for s in net.subnets_by_zone.values()],
                 security_group_ids=[net.sg.id],
                 max_vcpus=64,  # TODO: make configurable
                 instance_type=["m5d", "c5d", "r5d"],
@@ -75,7 +75,7 @@ class MiniwdlAwsBatch(Construct):
             compute_resources=BatchComputeEnvironmentComputeResources(
                 type="FARGATE",
                 max_vcpus=10,  # TODO: make configurable
-                subnets=[net.subnet.id],
+                subnets=[s.id for s in net.subnets_by_zone.values()],
                 security_group_ids=[net.sg.id],
             ),
             service_role=roles.batch_role.arn,
