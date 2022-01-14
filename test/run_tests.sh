@@ -16,5 +16,6 @@ export MINIWDL_AWS_TEST_BUCKET="miniwdl-test-$(aws sts get-caller-identity | jq 
 aws s3api create-bucket --bucket "$MINIWDL_AWS_TEST_BUCKET" \
     --region "$AWS_DEFAULT_REGION" --create-bucket-configuration LocationConstraint="$AWS_DEFAULT_REGION" \
     || true
+# NOTE: workflow IAM role needs to be able to write to that bucket...
 
 pytest -sxv test*.py $@
