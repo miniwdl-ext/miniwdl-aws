@@ -1,5 +1,7 @@
+import json
+from typing import List, Optional
 from constructs import Construct
-from imports.aws.iam import IamRole, IamServiceLinkedRole
+from imports.aws.iam import IamRole, IamRoleInlinePolicy, IamServiceLinkedRole
 
 
 class MiniwdlAwsRoles(Construct):
@@ -8,7 +10,13 @@ class MiniwdlAwsRoles(Construct):
     spot_fleet_role: IamRole
     batch_role: IamRole
 
-    def __init__(self, scope: Construct, ns: str, create_spot_service_roles: bool):
+    def __init__(
+        self,
+        scope: Construct,
+        ns: str,
+        s3upload_buckets: Optional[List[str]] = None,
+        create_spot_service_roles: bool = True,
+    ):
         super().__init__(scope, ns)
 
         self.task_role = IamRole(
@@ -41,6 +49,39 @@ class MiniwdlAwsRoles(Construct):
             ],
         )
 
+        s3upload_inline_policy = None
+        if s3upload_buckets:
+            s3upload_bucket_arns = ["arn:aws:s3:::" + b for b in s3upload_buckets]
+            s3upload_resource_arns = [arn + "/*" for arn in s3upload_bucket_arns]
+            s3upload_inline_policy = IamRoleInlinePolicy(
+                name="s3upload-policy",
+                policy=json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": ["s3:ListBucket"],
+                                "Resource": s3upload_bucket_arns,
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+                                "Resource": s3upload_resource_arns,
+                            },
+                        ],
+                    }
+                ),
+            )
+
+        workflow_managed_policies = [
+            "service-role/AmazonECSTaskExecutionRolePolicy",
+            "AWSBatchFullAccess",
+            "AmazonElasticFileSystemClientFullAccess",
+            "AmazonEC2ContainerRegistryReadOnly",
+            "AmazonS3ReadOnlyAccess",
+        ]
+
         self.workflow_role = IamRole(
             self,
             "workflow-role",
@@ -60,18 +101,9 @@ class MiniwdlAwsRoles(Construct):
                     ]
                 }
             """.strip(),
-            managed_policy_arns=[
-                "arn:aws:iam::aws:policy/" + p
-                for p in (
-                    "service-role/AmazonECSTaskExecutionRolePolicy",
-                    "AWSBatchFullAccess",
-                    "AmazonElasticFileSystemClientFullAccess",
-                    "AmazonEC2ContainerRegistryPowerUser",
-                    "AmazonS3ReadOnlyAccess",
-                )
-            ],
+            managed_policy_arns=["arn:aws:iam::aws:policy/" + p for p in workflow_managed_policies],
+            inline_policy=[s3upload_inline_policy] if s3upload_inline_policy else None,
         )
-        # TODO: inline policy for --s3upload bucket
 
         self.batch_role = IamRole(
             self,
@@ -108,11 +140,9 @@ class MiniwdlAwsRoles(Construct):
         # These service-linked roles can be created only once per account, so we make them optional
         # cf. https://github.com/cloudposse/terraform-aws-elasticsearch/issues/5
         if create_spot_service_roles:
-            IamServiceLinkedRole(
-                self, "spot-service-role", aws_service_name_prefix="spot.amazonaws.com"
-            )
+            IamServiceLinkedRole(self, "spot-service-role", aws_service_name="spot.amazonaws.com")
             IamServiceLinkedRole(
                 self,
                 "spot-fleet-service-role",
-                aws_service_name_prefix="spotfleet.amazonaws.com",
+                aws_service_name="spotfleet.amazonaws.com",
             )

@@ -8,6 +8,7 @@ from imports.aws.batch import (
 )
 from imports.aws.ec2 import LaunchTemplate, LaunchTemplateIamInstanceProfile
 from imports.aws.iam import IamInstanceProfile
+from imports.aws.efs import EfsAccessPoint
 from networking import MiniwdlAwsNetworking
 from roles import MiniwdlAwsRoles
 
@@ -22,6 +23,9 @@ class MiniwdlAwsBatch(Construct):
         ns: str,
         net: MiniwdlAwsNetworking,
         roles: MiniwdlAwsRoles,
+        fsap: EfsAccessPoint,
+        max_task_vcpus: int,
+        max_workflow_vpcus: int,
     ):
         super().__init__(scope, ns)
 
@@ -45,7 +49,7 @@ class MiniwdlAwsBatch(Construct):
             compute_resources=BatchComputeEnvironmentComputeResources(
                 subnets=[s.id for s in net.subnets_by_zone.values()],
                 security_group_ids=[net.sg.id],
-                max_vcpus=64,  # TODO: make configurable
+                max_vcpus=max_task_vcpus,
                 instance_type=["m5d", "c5d", "r5d"],
                 type="SPOT",
                 allocation_strategy="SPOT_CAPACITY_OPTIMIZED",
@@ -74,7 +78,7 @@ class MiniwdlAwsBatch(Construct):
             type="MANAGED",
             compute_resources=BatchComputeEnvironmentComputeResources(
                 type="FARGATE",
-                max_vcpus=10,  # TODO: make configurable
+                max_vcpus=max_workflow_vpcus,
                 subnets=[s.id for s in net.subnets_by_zone.values()],
                 security_group_ids=[net.sg.id],
             ),
@@ -91,6 +95,7 @@ class MiniwdlAwsBatch(Construct):
             tags={
                 "WorkflowEngineRoleArn": roles.workflow_role.arn,
                 "DefaultTaskQueue": self.task_queue.name,
+                "DefaultFsap": fsap.id,
             },
         )
 
