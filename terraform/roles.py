@@ -66,7 +66,7 @@ class MiniwdlAwsRoles(Construct):
                             },
                             {
                                 "Effect": "Allow",
-                                "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+                                "Action": ["s3:GetObject", "s3:PutObject"],
                                 "Resource": s3upload_resource_arns,
                             },
                         ],
