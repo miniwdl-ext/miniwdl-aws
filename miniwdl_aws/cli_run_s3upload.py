@@ -65,7 +65,7 @@ def miniwdl_run_s3upload():
     if not args.s3upload:
         # nothing to do
         print(
-            "[miniwdl_run_s3upload] no setting for --s3upload / MINIWDL__AWS__S3_UPLOAD_FOLDER; exiting",
+            f"[miniwdl_run_s3upload] no setting for --s3upload / MINIWDL__AWS__S3_UPLOAD_FOLDER; exiting (code = {miniwdl.returncode})",
             file=sys.stderr,
         )
         end_log_and_exit(miniwdl.returncode)
@@ -77,7 +77,7 @@ def miniwdl_run_s3upload():
         assert os.path.isdir(run_dir)
     except:
         print(
-            "[miniwdl_run_s3upload] no run directory in miniwdl standard output; exiting",
+            f"[miniwdl_run_s3upload] no run directory in miniwdl standard output; exiting (code = {miniwdl.returncode})",
             file=sys.stderr,
         )
         end_log_and_exit(miniwdl.returncode)
@@ -88,6 +88,10 @@ def miniwdl_run_s3upload():
         s3_upload_folder += os.path.basename(run_dir.rstrip("/")) + "/"
 
     # upload logs
+    print(
+        f"[miniwdl_run_s3upload] miniwdl exit code = {miniwdl.returncode}; uploading logs & outputs to {s3_upload_folder}",
+        file=sys.stderr,
+    )
     for p in (os.path.join(run_dir, fn) for fn in ("workflow.log", "task.log")):
         if os.path.isfile(p):
             upload1(p, s3_upload_folder)
@@ -127,7 +131,7 @@ def miniwdl_run_s3upload():
         if args.delete_after in ("always", "failure"):
             shutil.rmtree(run_dir)
             print(
-                "[miniwdl_run_s3upload] deleted " + run_dir,
+                f"[miniwdl_run_s3upload] deleted {run_dir}",
                 file=sys.stderr,
             )
         end_log_and_exit(miniwdl.returncode)
@@ -154,14 +158,14 @@ def miniwdl_run_s3upload():
         check=True,
     )
     print(
-        "[miniwdl_run_s3upload] uploaded " + s3_upload_folder + "outputs.json",
+        f"[miniwdl_run_s3upload] uploaded {s3_upload_folder}outputs.json",
         file=sys.stderr,
     )
     print(json.dumps({"s3upload": s3_upload_folder, "outputs": rewritten_outputs}, indent=2))
     if args.delete_after in ("always", "success"):
         shutil.rmtree(run_dir)
         print(
-            "[miniwdl_run_s3upload] deleted " + run_dir,
+            f"[miniwdl_run_s3upload] deleted {run_dir}",
             file=sys.stderr,
         )
 
