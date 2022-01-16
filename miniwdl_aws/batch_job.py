@@ -226,6 +226,18 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         memory_mbytes = max(
             math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576), 1024
         )
+        commands = [
+            f"cd {self.container_dir}/work",
+            "exit_code=0",
+            "bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
+        ]
+        if self.cfg.has_option("aws", "container_sync") and self.cfg.get_bool(
+            "aws", "container_sync"
+        ):
+            commands.append("find . -type f | xargs sync")
+            commands.append("sync ../stdout.txt ../stderr.txt")
+        commands.append("exit $exit_code")
+
         job_def = aws_batch.register_job_definition(
             jobDefinitionName=job_name,
             type="container",
@@ -233,11 +245,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 "image": image_tag,
                 "volumes": volumes,
                 "mountPoints": mount_points,
-                "command": [
-                    "/bin/bash",
-                    "-c",
-                    f"cd {self.container_dir}/work && bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2)",
-                ],
+                "command": ["/bin/bash", "-ec", "\n".join(commands)],
                 "resourceRequirements": [
                     {"type": "VCPU", "value": str(vcpu)},
                     {"type": "MEMORY", "value": str(memory_mbytes)},

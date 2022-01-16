@@ -150,9 +150,11 @@ def test_assemble_refbased(aws_batch, test_s3_folder):
 
 def test_termination(aws_batch, test_s3_folder):
     """
-    The workflow will fail and should do so relatively quickly (modulo worker instance startup time)
+    Upon a CommandFailed task failure, the workflow with parallel tasks quickly self-terminates.
     """
     t0 = time.time()
+    env = dict(os.environ)
+    env["MINIWDL__AWS__CONTAINER_SYNC"] = "true"
     rslt = batch_miniwdl(
         aws_batch,
         [
@@ -162,8 +164,11 @@ def test_termination(aws_batch, test_s3_folder):
             "--verbose",
         ],
         upload=test_s3_folder + "test_termination/",
+        env=env,
     )
     assert not rslt["success"]
+    assert rslt["error"]["cause"]["error"] == "CommandFailed"
+    assert rslt["error"]["cause"]["exit_status"] == 42
     assert (
         "This is the end, my only friend"
         in get_s3uri(rslt["error"]["cause"]["stderr_s3file"]).decode()

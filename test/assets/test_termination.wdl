@@ -17,7 +17,7 @@ task t {
     command <<<
         if (( ~{i} == 3 )); then
             sleep 10
-            >&2 echo "This is the end, my only friend"
+            >&2 echo -n "This is the end, my only friend"
             exit 42
         fi
         sleep 600
