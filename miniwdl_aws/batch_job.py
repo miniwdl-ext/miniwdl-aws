@@ -51,6 +51,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             cls._fsap_id = cfg.get("aws", "fsap")
             if not cls._fs_id:
                 cls._fs_id = efs_id_from_access_point(cls._region_name, cls._fsap_id)
+        cls._studio_efs_uid = None
         sagemaker_studio_efs = detect_sagemaker_studio_efs(logger, region_name=cls._region_name)
         if sagemaker_studio_efs:
             (
@@ -67,6 +68,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to "
                 + studio_efs_mount.rstrip("/")
             )
+            cls._studio_efs_uid = studio_efs_uid
             if not cls._fsap_id:
                 cls._fsap_id = detect_studio_fsap(
                     logger,
@@ -220,56 +222,22 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         # concurrent RegisterJobDefinition requests
         job_name = randomize_job_name(job_name)
 
-        image_tag = self.runtime_values.get("docker", "ubuntu:20.04")
-        volumes, mount_points = self._prepare_mounts(logger, command)
-        vcpu = self.runtime_values.get("cpu", 1)
-        memory_mbytes = max(
-            math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576), 1024
-        )
-        commands = [
-            f"cd {self.container_dir}/work",
-            "exit_code=0",
-            "bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
-        ]
-        if self.cfg.has_option("aws", "container_sync") and self.cfg.get_bool(
-            "aws", "container_sync"
-        ):
-            commands.append("find . -type f | xargs sync")
-            commands.append("sync ../stdout.txt ../stderr.txt")
-        commands.append("exit $exit_code")
-
+        container_properties = self._prepare_container_properties(logger, command)
         job_def = aws_batch.register_job_definition(
             jobDefinitionName=job_name,
             type="container",
-            containerProperties={
-                "image": image_tag,
-                "volumes": volumes,
-                "mountPoints": mount_points,
-                "command": ["/bin/bash", "-ec", "\n".join(commands)],
-                "resourceRequirements": [
-                    {"type": "VCPU", "value": str(vcpu)},
-                    {"type": "MEMORY", "value": str(memory_mbytes)},
-                ],
-            },
+            containerProperties=container_properties,
         )
         job_def_handle = f"{job_def['jobDefinitionName']}:{job_def['revision']}"
-        logger.debug(_("registered Batch job definition", jobDefinition=job_def_handle))
+        logger.debug(
+            _(
+                "registered Batch job definition",
+                jobDefinition=job_def_handle,
+                **container_properties,
+            )
+        )
 
-        def deregister(logger, aws_batch, job_def_handle):
-            try:
-                aws_batch.deregister_job_definition(jobDefinition=job_def_handle)
-                logger.debug(_("deregistered Batch job definition", jobDefinition=job_def_handle))
-            except botocore.exceptions.ClientError as exn:
-                # AWS expires job definitions after 6mo, so failing to delete them isn't fatal
-                logger.warning(
-                    _(
-                        "failed to deregister Batch job definition",
-                        jobDefinition=job_def_handle,
-                        error=str(AWSError(exn)),
-                    )
-                )
-
-        cleanup.callback(deregister, logger, aws_batch, job_def_handle)
+        self._cleanup_job_definition(logger, cleanup, aws_batch, job_def_handle)
 
         job_tags = {}
         if self.cfg.has_option("aws", "job_tags"):
@@ -295,6 +263,50 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             )
         )
         return job["jobId"]
+
+    def _prepare_container_properties(self, logger, command):
+        image_tag = self.runtime_values.get("docker", "ubuntu:20.04")
+        volumes, mount_points = self._prepare_mounts(logger, command)
+        vcpu = self.runtime_values.get("cpu", 1)
+        memory_mbytes = max(
+            math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576), 1024
+        )
+        commands = [
+            f"cd {self.container_dir}/work",
+            "exit_code=0",
+            "bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
+        ]
+        if self.cfg.has_option("aws", "container_sync") and self.cfg.get_bool(
+            "aws", "container_sync"
+        ):
+            commands.append("find . -type f | xargs sync")
+            commands.append("sync ../stdout.txt ../stderr.txt")
+        commands.append("exit $exit_code")
+
+        container_properties = {
+            "image": image_tag,
+            "volumes": volumes,
+            "mountPoints": mount_points,
+            "command": ["/bin/bash", "-ec", "\n".join(commands)],
+            "resourceRequirements": [
+                {"type": "VCPU", "value": str(vcpu)},
+                {"type": "MEMORY", "value": str(memory_mbytes)},
+            ],
+        }
+
+        if self.cfg["task_runtime"].get_bool("as_user"):
+            user = (
+                f"{self._studio_efs_uid}:{self._studio_efs_uid}"
+                if self._studio_efs_uid is not None
+                else f"{os.geteuid()}:{os.getegid()}"
+            )
+            if user.startswith("0:"):
+                logger.warning(
+                    "container command will run explicitly as root, since you are root and set --as-me"
+                )
+            container_properties["user"] = user
+
+        return container_properties
 
     def _prepare_mounts(self, logger, command):
         """
@@ -344,6 +356,23 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             symlink_force(host_fn, container_fn)
 
         return volumes, mount_points
+
+    def _cleanup_job_definition(self, logger, cleanup, aws_batch, job_def_handle):
+        def deregister(logger, aws_batch, job_def_handle):
+            try:
+                aws_batch.deregister_job_definition(jobDefinition=job_def_handle)
+                logger.debug(_("deregistered Batch job definition", jobDefinition=job_def_handle))
+            except botocore.exceptions.ClientError as exn:
+                # AWS expires job definitions after 6mo, so failing to delete them isn't fatal
+                logger.warning(
+                    _(
+                        "failed to deregister Batch job definition",
+                        jobDefinition=job_def_handle,
+                        error=str(AWSError(exn)),
+                    )
+                )
+
+        cleanup.callback(deregister, logger, aws_batch, job_def_handle)
 
     def _await_batch_job(self, logger, cleanup, aws_batch, job_id, terminating):
         """
