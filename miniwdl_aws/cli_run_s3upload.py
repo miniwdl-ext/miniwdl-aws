@@ -21,7 +21,7 @@ from ._util import END_OF_LOG, subprocess_run_with_clean_exit
 
 def miniwdl_run_s3upload():
     # Set signal handler. SystemExit may be handled below and/or by subprocess_run_with_clean_exit.
-    for s in (signal.SIGTERM, signal.SIGINT):
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT):
         signal.signal(s, lambda sig, _: (_ for _ in ()).throw(SystemExit(sig)))
 
     # run main logic with handlers
