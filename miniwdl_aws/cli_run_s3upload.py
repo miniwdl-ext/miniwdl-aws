@@ -45,9 +45,9 @@ def end_log_and_exit(code):
 
 def miniwdl_run_s3upload_inner():
     parser = argparse.ArgumentParser(
-        prog="miniwdl_run_s3upload",
+        prog="miniwdl-run-s3upload",
         description="Pass through arguments to `miniwdl run` and afterwards, upload outputs to S3 and optionally delete local run directory.",
-        usage="miniwdl_run_s3upload [miniwdl_run_arg ...]",
+        usage="miniwdl-run-s3upload [miniwdl_run_arg ...]",
         allow_abbrev=False,
     )
     parser.add_argument(

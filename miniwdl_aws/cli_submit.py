@@ -19,9 +19,9 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 
 def miniwdl_submit_awsbatch(argv):
     parser = argparse.ArgumentParser(
-        prog="miniwdl_submit_awsbatch",
+        prog="miniwdl-aws-submit",
         description="Launch `miniwdl run` on AWS Batch (+ EFS at /mnt/efs), itself launching additional Batch jobs to execute WDL tasks. Passed-through arguments to `miniwdl run` should refer to s3:// or /mnt/efs/ input paths, rather than the local filesystem.",
-        usage="miniwdl_submit_awsbatch [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE --task-queue TASK_QUEUE",
+        usage="miniwdl-aws-submit [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE --task-queue TASK_QUEUE",
         allow_abbrev=False,
     )
     group = parser.add_argument_group("AWS Batch")
