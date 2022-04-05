@@ -15,10 +15,35 @@ import subprocess
 import shutil
 import argparse
 import tempfile
-from ._util import END_OF_LOG
+import signal
+from ._util import END_OF_LOG, subprocess_run_with_clean_exit
 
 
 def miniwdl_run_s3upload():
+    # Set signal handler. SystemExit may be handled below and/or by subprocess_run_with_clean_exit.
+    for s in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(s, lambda sig, _: (_ for _ in ()).throw(SystemExit(sig)))
+
+    # run main logic with handlers
+    try:
+        end_log_and_exit(miniwdl_run_s3upload_inner())
+    except SystemExit as exc:
+        end_log_and_exit(exc.code)
+    except KeyboardInterrupt:
+        end_log_and_exit(int(signal.SIGINT))
+    except BrokenPipeError:
+        end_log_and_exit(int(signal.SIGPIPE))
+
+
+def end_log_and_exit(code):
+    print(
+        "\n" + END_OF_LOG,
+        file=sys.stderr,
+    )
+    sys.exit(code)
+
+
+def miniwdl_run_s3upload_inner():
     parser = argparse.ArgumentParser(
         prog="miniwdl_run_s3upload",
         description="Pass through arguments to `miniwdl run` and afterwards, upload outputs to S3 and optionally delete local run directory.",
@@ -59,7 +84,9 @@ def miniwdl_run_s3upload():
         miniwdl_env["MINIWDL__AWS__TASK_QUEUE"] = args.task_queue
 
     # run miniwdl & tee its standard output
-    miniwdl = subprocess.run(cmd, stdout=subprocess.PIPE, env=miniwdl_env, check=False)
+    miniwdl = subprocess_run_with_clean_exit(
+        cmd, stdout=subprocess.PIPE, env=miniwdl_env, check=False
+    )
     sys.stdout.buffer.write(miniwdl.stdout)
 
     if not args.s3upload:
@@ -68,7 +95,7 @@ def miniwdl_run_s3upload():
             f"[miniwdl_run_s3upload] no setting for --s3upload / MINIWDL__AWS__S3_UPLOAD_FOLDER; exiting (code = {miniwdl.returncode})",
             file=sys.stderr,
         )
-        end_log_and_exit(miniwdl.returncode)
+        return miniwdl.returncode
 
     # read miniwdl standard output JSON
     try:
@@ -80,7 +107,7 @@ def miniwdl_run_s3upload():
             f"[miniwdl_run_s3upload] no run directory in miniwdl standard output; exiting (code = {miniwdl.returncode})",
             file=sys.stderr,
         )
-        end_log_and_exit(miniwdl.returncode)
+        return miniwdl.returncode
 
     # append miniwdl's run name to S3_UPLOAD_FOLDER (unless the latter ends in '/')
     s3_upload_folder = args.s3upload
@@ -114,7 +141,7 @@ def miniwdl_run_s3upload():
 
     # upload output files, if any
     if os.path.isdir(os.path.join(run_dir, "out")):
-        subprocess.run(
+        subprocess_run_with_clean_exit(
             [
                 "aws",
                 "s3",
@@ -134,7 +161,7 @@ def miniwdl_run_s3upload():
                 f"[miniwdl_run_s3upload] deleted {run_dir}",
                 file=sys.stderr,
             )
-        end_log_and_exit(miniwdl.returncode)
+        return miniwdl.returncode
 
     # recursively rewrite outputs JSON
     def rewrite(v):
@@ -153,7 +180,7 @@ def miniwdl_run_s3upload():
     with open(outputs_s3_json + ".tmp", "w") as outfile:
         print(json.dumps(rewritten_outputs, indent=2), file=outfile)
     os.rename(outputs_s3_json + ".tmp", outputs_s3_json)
-    subprocess.run(
+    subprocess_run_with_clean_exit(
         ["aws", "s3", "cp", "--no-progress", outputs_s3_json, s3_upload_folder + "outputs.json"],
         check=True,
     )
@@ -169,19 +196,11 @@ def miniwdl_run_s3upload():
             file=sys.stderr,
         )
 
-    end_log_and_exit(miniwdl.returncode)
-
-
-def end_log_and_exit(code):
-    print(
-        "\n" + END_OF_LOG,
-        file=sys.stderr,
-    )
-    sys.exit(code)
+    return miniwdl.returncode
 
 
 def upload1(fn, dest):
-    subprocess.run(["aws", "s3", "cp", "--no-progress", fn, dest], check=True)
+    subprocess_run_with_clean_exit(["aws", "s3", "cp", "--no-progress", fn, dest], check=True)
 
 
 def rebase_output_path(fn, run_dir, s3_upload_folder):
