@@ -4,6 +4,7 @@ on: [push]
 jobs:
 
   ghcr_image:
+    if: github.repository == 'miniwdl-ext/miniwdl-aws' # don't run from forks
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
