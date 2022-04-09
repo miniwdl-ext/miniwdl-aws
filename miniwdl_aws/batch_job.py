@@ -9,7 +9,6 @@ import math
 import time
 import threading
 import heapq
-import json
 from contextlib import ExitStack
 import boto3
 import botocore
@@ -180,14 +179,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         Run task
         """
         try:
-            if os.environ.get("MINIWDL__AWS__BATCH_CLIENT_RETRIES") is not None:
-                aws_batch_client_retries = json.loads(os.environ["MINIWDL__AWS__BATCH_CLIENT_RETRIES"])
-            else:
-                aws_batch_client_retries = self.cfg["batch_client"].get_dict("default_retries")
             aws_batch = boto3.Session().client(  # Session() needed for thread safety
                 "batch",
                 region_name=self._region_name,
-                config=botocore.config.Config(retries=aws_batch_client_retries),
+                config=botocore.config.Config(retries=self.cfg["aws"].get_dict("boto3_retries")),
             )
             with ExitStack() as cleanup:
                 # submit Batch job (with request throttling)
