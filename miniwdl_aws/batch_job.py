@@ -179,10 +179,15 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         Run task
         """
         try:
+            boto3_retries = (
+                self.cfg.get_dict("aws", "boto3_retries")
+                if self.cfg.has_option("aws", "boto3_retries")
+                else {"max_attempts": 5, "mode": "standard"}
+            )
             aws_batch = boto3.Session().client(  # Session() needed for thread safety
                 "batch",
                 region_name=self._region_name,
-                config=botocore.config.Config(retries=self.cfg["aws"].get_dict("boto3_retries")),
+                config=botocore.config.Config(retries=boto3_retries),
             )
             with ExitStack() as cleanup:
                 # submit Batch job (with request throttling)
