@@ -140,9 +140,18 @@ Recommendations:
 * Use non-default VPC security group for EFS & compute environments
     * EFS must be accessible to all containers through TCP port 2049
 
-## Appendix 2: running tests
+## Appendix 2: Contributing
 
-In an AWS-credentialed terminal session,
+Pull requests are welcome! For help, open an issue here or drop in on [#miniwdl in the OpenWDL Slack](https://openwdl.slack.com/archives/C02JCRJU79T).
+
+**Code formatting and linting.** To prepare your code to pass the CI checks,
+
+```
+pip3 install --upgrade pre-commit black flake8 pylint
+pre-commit run --all-files
+```
+
+**Running tests.** In an AWS-credentialed terminal session,
 
 ```
 MINIWDL__AWS__FSAP=fsap-xxxx \
