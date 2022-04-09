@@ -1,18 +1,7 @@
-name: build
-on: [push, pull_request]
+name: ghcr_image
+on: [push]
 
 jobs:
-
-  lint:
-    runs-on: ubuntu-20.04
-    steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-    - name: deps
-      run: sudo pip3 install --system pre-commit black flake8 pylint
-    - name: pre-commit
-      run: pre-commit run --all-files
 
   ghcr_image:
     runs-on: ubuntu-20.04
