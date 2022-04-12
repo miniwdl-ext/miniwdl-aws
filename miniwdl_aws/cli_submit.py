@@ -1,9 +1,9 @@
 """
-miniwdl_submit_awsbatch CLI entry point (console script) to submit a miniwdl "workflow job" to an
-AWS Batch queue, which will invoke miniwdl-run-s3upload to run the workflow (spawning additional
-Batch jobs as needed to execute tasks). This is typically used on-laptop to kick off workflows,
-without the laptop needing to stay on/connected. It can also wait for the workflow job to complete
-and stream its logs.
+miniwdl-aws-submit CLI entry point (console script) to submit a miniwdl "workflow job" to an AWS
+Batch queue, which will invoke miniwdl-run-s3upload to run the workflow (spawning additional Batch
+jobs as needed to execute tasks). This is typically used on-laptop to kick off workflows, without
+the laptop needing to stay on/connected. It can also wait for the workflow job to complete and
+stream its logs.
 """
 
 import sys
@@ -335,7 +335,7 @@ def wait(aws_region_name, aws_batch, workflow_job_id, follow):
                     saw_end = True
             if not saw_end:
                 print(
-                    f"[miniwdl_submit_awsbatch] WARNING: end-of-log marker not seen; more information may appear in log stream {log_stream_name}",
+                    f"[miniwdl-aws-submit] WARNING: end-of-log marker not seen; more information may appear in log stream {log_stream_name}",
                     file=sys.stderr,
                 )
             sys.stderr.flush()
@@ -344,7 +344,7 @@ def wait(aws_region_name, aws_batch, workflow_job_id, follow):
         return exit_code
     except KeyboardInterrupt:
         print(
-            f"[miniwdl_submit_awsbatch] interrupted by Ctrl-C; workflow may remain active in workflow job {workflow_job_id}",
+            f"[miniwdl-aws-submit] interrupted by Ctrl-C; workflow may remain active in workflow job {workflow_job_id}",
             file=sys.stderr,
         )
         return -1
