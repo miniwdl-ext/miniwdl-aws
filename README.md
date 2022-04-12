@@ -54,7 +54,7 @@ Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl 
 
 Miniwdl runs the workflow in a directory beneath `/mnt/efs/miniwdl_run` (override with `--dir`). The outputs also remain cached there for potential reuse in future runs.
 
-Given the EFS-centric I/O model, you'll need a way to manage the filesystem contents remotely. Deploy an instance or container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
+Given the EFS-centric I/O model, you'll need a way to manage the filesystem contents remotely. The companion recipe [lambdash-efs](https://github.com/miniwdl-ext/lambdash-efs) is one option. Or deploy an instance/container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
 
 You can also automate cleanup of EFS run directories by setting `miniwdl-aws-submit --s3upload` and:
 
