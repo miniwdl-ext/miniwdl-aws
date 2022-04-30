@@ -83,7 +83,6 @@ def miniwdl_submit_awsbatch(argv):
             {"type": "VCPU", "value": str(args.cpu)},
             {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
         ],
-        "networkConfiguration": {"assignPublicIp": "ENABLED"},
         "volumes": [
             {
                 "name": "efs",
@@ -99,6 +98,8 @@ def miniwdl_submit_awsbatch(argv):
         "command": miniwdl_run_cmd,
         "environment": environment,
     }
+    if not args.no_public_ip:
+        workflow_container_props["networkConfiguration"] = {"assignPublicIp": "ENABLED"}
 
     # Register & submit workflow job
     workflow_job_def = aws_batch.register_job_definition(
@@ -140,14 +141,10 @@ def parse_args_and_env(argv):
         description="Launch `miniwdl run` on AWS Batch (+ EFS at /mnt/efs), itself launching additional"
         " Batch jobs to execute WDL tasks. Passed-through arguments to `miniwdl run` should refer to"
         " s3:// or /mnt/efs/ input paths, rather than the local filesystem.",
-        usage="miniwdl-aws-submit [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE --task-queue TASK_QUEUE",
+        usage="miniwdl-aws-submit [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE --task-queue TASK_QUEUE --fsap fsap-xxxx",
         allow_abbrev=False,
     )
     group = parser.add_argument_group("AWS Batch")
-    group.add_argument(
-        "--fsap",
-        help="EFS Access Point ID (fsap-xxxx) to mount in all containers [env MINIWDL__AWS__FSAP]",
-    )
     group.add_argument(
         "--workflow-queue",
         help="job queue for workflow job [env MINIWDL__AWS__WORKFLOW_QUEUE]",
@@ -156,11 +153,18 @@ def parse_args_and_env(argv):
         "--task-queue", help="job queue for task jobs [env MINIWDL__AWS__TASK_QUEUE]"
     )
     group.add_argument(
+        "--fsap",
+        help="EFS Access Point ID (fsap-xxxx) for mounting [env MINIWDL__AWS__FSAP]",
+    )
+    group.add_argument(
+        "--mount", default="/mnt/efs", help="EFS mount point in all containers [/mnt/efs]"
+    )
+    group = parser.add_argument_group("Workflow job provisioning")
+    group.add_argument(
         "--workflow-role",
         help="ARN of execution+job role for workflow job [env MINIWDL__AWS__WORKFLOW_ROLE"
         " or read from WorkflowEngineRoleArn tag on job queue]",
     )
-    group = parser.add_argument_group("Workflow job provisioning")
     group.add_argument("--name", help="workflow job name [WDL filename]")
     group.add_argument("--cpu", metavar="N", type=int, default=2, help="vCPUs for workflow job [2]")
     group.add_argument(
@@ -170,11 +174,15 @@ def parse_args_and_env(argv):
         "--image",
         help="miniwdl-aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
     )
-    parser.add_argument(
-        "--no-env", action="store_true", help="do not pass through MINIWDL__* environment variables"
+    group.add_argument(
+        "--no-env", action="store_true", help="don't pass through MINIWDL__* environment variables"
+    )
+    group.add_argument(
+        "--no-public-ip",
+        action="store_true",
+        help="don't assign public IP (workflow compute env has private subnet & NAT)",
     )
     group = parser.add_argument_group("miniwdl I/O")
-    group.add_argument("--mount", default="/mnt/efs", help="EFS mount point [/mnt/efs]")
     group.add_argument(
         "--dir",
         default=None,
