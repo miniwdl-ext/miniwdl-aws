@@ -44,6 +44,7 @@ def miniwdl_submit_awsbatch(argv):
         {"name": "MINIWDL__AWS__FS", "value": fs_id},
         {"name": "MINIWDL__AWS__FSAP", "value": args.fsap},
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
+        {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
     ]
     extra_env = set()
     if not args.no_env:
@@ -59,6 +60,7 @@ def miniwdl_submit_awsbatch(argv):
                 "MINIWDL__AWS__WORKFLOW_IMAGE",
                 "MINIWDL__AWS__S3_UPLOAD_FOLDER",
                 "MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER",
+                "MINIWDL__FILE_IO__ROOT",
             ):
                 environment.append({"name": k, "value": os.environ[k]})
                 extra_env.add(k)
@@ -92,7 +94,7 @@ def miniwdl_submit_awsbatch(argv):
                 },
             }
         ],
-        "mountPoints": [{"containerPath": "/mnt/efs", "sourceVolume": "efs"}],
+        "mountPoints": [{"containerPath": args.mount, "sourceVolume": "efs"}],
         "image": args.image,
         "command": miniwdl_run_cmd,
         "environment": environment,
@@ -144,7 +146,7 @@ def parse_args_and_env(argv):
     group = parser.add_argument_group("AWS Batch")
     group.add_argument(
         "--fsap",
-        help="EFS Access Point ID (fsap-xxxx) to mount at /mnt/efs in all containers [env MINIWDL__AWS__FSAP]",
+        help="EFS Access Point ID (fsap-xxxx) to mount in all containers [env MINIWDL__AWS__FSAP]",
     )
     group.add_argument(
         "--workflow-queue",
@@ -172,9 +174,10 @@ def parse_args_and_env(argv):
         "--no-env", action="store_true", help="do not pass through MINIWDL__* environment variables"
     )
     group = parser.add_argument_group("miniwdl I/O")
+    group.add_argument("--mount", default="/mnt/efs", help="EFS mount point [/mnt/efs]")
     group.add_argument(
         "--dir",
-        default="/mnt/efs/miniwdl_run",
+        default=None,
         help="Run directory prefix [/mnt/efs/miniwdl_run]",
     )
     group.add_argument(
@@ -199,6 +202,15 @@ def parse_args_and_env(argv):
 
     # Parse command line
     args, unused_args = parser.parse_known_args(argv[1:])
+
+    if args.mount.endswith("/"):
+        args.mount = args.mount[:-1]
+    assert args.mount
+    if not args.dir:
+        args.dir = os.path.join(args.mount, "miniwdl_run")
+    if not args.dir.startswith(args.mount):
+        print(f"--dir must begin with {args.mount}", file=sys.stderr)
+        sys.exit(1)
 
     # Detect additional configuration from environment
     args.fsap = args.fsap if args.fsap else os.environ.get("MINIWDL__AWS__FSAP", "")
@@ -255,15 +267,12 @@ def form_miniwdl_run_cmd(args, unused_args):
     Formulate the `miniwdl run` command line to be invoked in the workflow job container
     """
     if args.self_test:
-        self_test_dir = (
-            f"/mnt/efs/miniwdl_run_self_test/{datetime.today().strftime('%Y%m%d_%H%M%S')}"
+        self_test_dir = os.path.join(
+            args.mount, "miniwdl_run_self_test", datetime.today().strftime("%Y%m%d_%H%M%S")
         )
         miniwdl_run_cmd = ["miniwdl", "run_self_test", "--dir", self_test_dir]
         job_name = args.name if args.name else "miniwdl_run_self_test"
     else:
-        if not (args.dir and args.dir.startswith("/mnt/efs/")):
-            print("--dir required & must begin with /mnt/efs/", file=sys.stderr)
-            sys.exit(1)
         wdl_filename = next((arg for arg in unused_args if not arg.startswith("-")), None)
         if not wdl_filename:
             print("Command line appears to be missing WDL filename", file=sys.stderr)

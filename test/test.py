@@ -83,7 +83,16 @@ def get_s3uri(uri):
 
 def test_miniwdl_run_self_test(aws_batch):
     subprocess.run(
-        ["python3", "-m", "miniwdl_aws", "--follow", "--self-test", "--no-cache"],
+        [
+            "python3",
+            "-m",
+            "miniwdl_aws",
+            "--follow",
+            "--self-test",
+            "--no-cache",
+            "--mount",
+            "/mnt/shared",
+        ],
         cwd=os.path.dirname(os.path.dirname(__file__)),
         check=True,
     )
