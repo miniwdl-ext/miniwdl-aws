@@ -18,6 +18,119 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 
 
 def miniwdl_submit_awsbatch(argv):
+    # Configure from arguments & environment
+    args, unused_args = parse_args_and_env(argv)
+    verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
+
+    # TODO: accept local WDL source code; check, zip, & attach it
+
+    aws_region_name = detect_aws_region(None)
+    if not aws_region_name:
+        print(
+            "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    aws_batch = boto3.client("batch", region_name=aws_region_name)
+    if not args.workflow_role:
+        args.workflow_role = detect_workflow_role(aws_batch, args.workflow_queue, verbose)
+    fs_id = efs_id_from_access_point(aws_region_name, args.fsap)
+
+    # Prepare workflow job: command, environment, and container properties
+    job_name, miniwdl_run_cmd = form_miniwdl_run_cmd(args, unused_args)
+    job_name = randomize_job_name(job_name)
+
+    environment = [
+        {"name": "MINIWDL__AWS__FS", "value": fs_id},
+        {"name": "MINIWDL__AWS__FSAP", "value": args.fsap},
+        {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
+    ]
+    extra_env = set()
+    if not args.no_env:
+        # pass through environment variables starting with MINIWDL__ (except those specific to
+        # workflow job launch, or passed through via command line)
+        for k in os.environ:
+            if k.startswith("MINIWDL__") and k not in (
+                "MINIWDL__AWS__FS",
+                "MINIWDL__AWS__FSAP",
+                "MINIWDL__AWS__TASK_QUEUE",
+                "MINIWDL__AWS__WORKFLOW_QUEUE",
+                "MINIWDL__AWS__WORKFLOW_ROLE",
+                "MINIWDL__AWS__WORKFLOW_IMAGE",
+                "MINIWDL__AWS__S3_UPLOAD_FOLDER",
+                "MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER",
+            ):
+                environment.append({"name": k, "value": os.environ[k]})
+                extra_env.add(k)
+
+    if verbose:
+        print("Image: " + args.image, file=sys.stderr)
+        if extra_env:
+            print(
+                "Passing through environment variables (--no-env to disable): "
+                + " ".join(list(extra_env)),
+                file=sys.stderr,
+            )
+        print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
+
+    workflow_container_props = {
+        "fargatePlatformConfiguration": {"platformVersion": "1.4.0"},
+        "executionRoleArn": args.workflow_role,
+        "jobRoleArn": args.workflow_role,
+        "resourceRequirements": [
+            {"type": "VCPU", "value": str(args.cpu)},
+            {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
+        ],
+        "networkConfiguration": {"assignPublicIp": "ENABLED"},
+        "volumes": [
+            {
+                "name": "efs",
+                "efsVolumeConfiguration": {
+                    "fileSystemId": fs_id,
+                    "transitEncryption": "ENABLED",
+                    "authorizationConfig": {"accessPointId": args.fsap},
+                },
+            }
+        ],
+        "mountPoints": [{"containerPath": "/mnt/efs", "sourceVolume": "efs"}],
+        "image": args.image,
+        "command": miniwdl_run_cmd,
+        "environment": environment,
+    }
+
+    # Register & submit workflow job
+    workflow_job_def = aws_batch.register_job_definition(
+        jobDefinitionName=job_name,
+        platformCapabilities=["FARGATE"],
+        type="container",
+        containerProperties=workflow_container_props,
+    )
+    workflow_job_def_handle = (
+        f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
+    )
+    try:
+        workflow_job_id = aws_batch.submit_job(
+            jobName=job_name,
+            jobQueue=args.workflow_queue,
+            jobDefinition=workflow_job_def_handle,
+        )["jobId"]
+        if verbose:
+            print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
+            sys.stderr.flush()
+        print(workflow_job_id)
+        if not sys.stdout.isatty():
+            print(workflow_job_id, file=sys.stderr)
+    finally:
+        aws_batch.deregister_job_definition(jobDefinition=workflow_job_def_handle)
+
+    # Wait for workflow job, if requested
+    exit_code = 0
+    if args.wait or args.follow:
+        exit_code = wait(aws_region_name, aws_batch, workflow_job_id, args.follow)
+    sys.exit(exit_code)
+
+
+def parse_args_and_env(argv):
     if "COLUMNS" not in os.environ:
         os.environ["COLUMNS"] = "100"
     parser = argparse.ArgumentParser(
@@ -83,19 +196,11 @@ def miniwdl_submit_awsbatch(argv):
         help="live-stream workflow log to standard error (implies --wait)",
     )
     parser.add_argument("--self-test", action="store_true", help="perform `miniwdl run_self_test`")
-    # TODO: upload & rewrite WDL source, arguments, inputs.json
-    # TODO: miniwdl check the source code
 
+    # Parse command line
     args, unused_args = parser.parse_known_args(argv[1:])
 
-    aws_region_name = detect_aws_region(None)
-    if not aws_region_name:
-        print(
-            "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
+    # Detect additional configuration from environment
     args.fsap = args.fsap if args.fsap else os.environ.get("MINIWDL__AWS__FSAP", "")
     args.workflow_queue = (
         args.workflow_queue
@@ -116,48 +221,6 @@ def miniwdl_submit_awsbatch(argv):
             file=sys.stderr,
         )
         sys.exit(1)
-    if args.delete_after and not args.s3upload:
-        print("--delete-after requires --s3upload", file=sys.stderr)
-        sys.exit(1)
-    args.s3upload = (
-        args.s3upload if args.s3upload else os.environ.get("MINIWDL__AWS__S3_UPLOAD_FOLDER", None)
-    )
-    args.delete_after = (
-        args.delete_after.strip().lower()
-        if args.delete_after
-        else os.environ.get("MINIWDL__AWS__DELETE_AFTER_S3_UPLOAD", None)
-    )
-    if args.self_test:
-        self_test_dir = (
-            f"/mnt/efs/miniwdl_run_self_test/{datetime.today().strftime('%Y%m%d_%H%M%S')}"
-        )
-        miniwdl_run_cmd = ["miniwdl", "run_self_test", "--dir", self_test_dir]
-        if not args.name:
-            args.name = "miniwdl_run_self_test"
-    else:
-        if not (args.dir and args.dir.startswith("/mnt/efs/")):
-            print("--dir required & must begin with /mnt/efs/", file=sys.stderr)
-            sys.exit(1)
-        wdl_filename = next((arg for arg in unused_args if not arg.startswith("-")), None)
-        if not wdl_filename:
-            print("Command line appears to be missing WDL filename", file=sys.stderr)
-            sys.exit(1)
-        if not args.name:
-            args.name = os.path.basename(wdl_filename).lstrip(".")
-            try:
-                for punct in (".", "?"):
-                    if args.name.index(punct) > 0:
-                        args.name = args.name[: args.name.index(punct)]
-            except ValueError:
-                pass
-            args.name = ("miniwdl_run_" + args.name)[:128]
-        # pass most arguments through to miniwdl-run-s3upload inside workflow job
-        miniwdl_run_cmd = ["miniwdl-run-s3upload"] + unused_args
-        miniwdl_run_cmd.extend(["--dir", args.dir])
-        miniwdl_run_cmd.extend(["--s3upload", args.s3upload] if args.s3upload else [])
-        miniwdl_run_cmd.extend(["--delete-after", args.delete_after] if args.delete_after else [])
-
-    args.name = randomize_job_name(args.name)
     args.image = args.image if args.image else os.environ.get("MINIWDL__AWS__WORKFLOW_IMAGE", None)
     if not args.image:
         import importlib_metadata
@@ -172,124 +235,85 @@ def miniwdl_submit_awsbatch(argv):
                 file=sys.stderr,
             )
             sys.exit(1)
+    if args.delete_after and not args.s3upload:
+        print("--delete-after requires --s3upload", file=sys.stderr)
+        sys.exit(1)
+    args.s3upload = (
+        args.s3upload if args.s3upload else os.environ.get("MINIWDL__AWS__S3_UPLOAD_FOLDER", None)
+    )
+    args.delete_after = (
+        args.delete_after.strip().lower()
+        if args.delete_after
+        else os.environ.get("MINIWDL__AWS__DELETE_AFTER_S3_UPLOAD", None)
+    )
 
-    verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
-    region_name = detect_aws_region(None)
-    fs_id = efs_id_from_access_point(region_name, args.fsap)
+    return (args, unused_args)
 
-    environment = [
-        {"name": "MINIWDL__AWS__FS", "value": fs_id},
-        {"name": "MINIWDL__AWS__FSAP", "value": args.fsap},
-        {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
-    ]
-    extra_env = set()
-    if not args.no_env:
-        # pass through environment variables starting with MINIWDL__ (except those specific to
-        # workflow job launch, or passed through via command line)
-        for k in os.environ:
-            if k.startswith("MINIWDL__") and k not in (
-                "MINIWDL__AWS__FS",
-                "MINIWDL__AWS__FSAP",
-                "MINIWDL__AWS__TASK_QUEUE",
-                "MINIWDL__AWS__WORKFLOW_QUEUE",
-                "MINIWDL__AWS__WORKFLOW_ROLE",
-                "MINIWDL__AWS__WORKFLOW_IMAGE",
-                "MINIWDL__AWS__S3_UPLOAD_FOLDER",
-                "MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER",
-            ):
-                environment.append({"name": k, "value": os.environ[k]})
-                extra_env.add(k)
 
-    if verbose:
-        print("Image: " + args.image, file=sys.stderr)
-        if extra_env:
-            print(
-                "Passing through environment variables (--no-env to disable): "
-                + " ".join(list(extra_env)),
-                file=sys.stderr,
-            )
-        print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
+def form_miniwdl_run_cmd(args, unused_args):
+    """
+    Formulate the `miniwdl run` command line to be invoked in the workflow job container
+    """
+    if args.self_test:
+        self_test_dir = (
+            f"/mnt/efs/miniwdl_run_self_test/{datetime.today().strftime('%Y%m%d_%H%M%S')}"
+        )
+        miniwdl_run_cmd = ["miniwdl", "run_self_test", "--dir", self_test_dir]
+        job_name = args.name if args.name else "miniwdl_run_self_test"
+    else:
+        if not (args.dir and args.dir.startswith("/mnt/efs/")):
+            print("--dir required & must begin with /mnt/efs/", file=sys.stderr)
+            sys.exit(1)
+        wdl_filename = next((arg for arg in unused_args if not arg.startswith("-")), None)
+        if not wdl_filename:
+            print("Command line appears to be missing WDL filename", file=sys.stderr)
+            sys.exit(1)
+        job_name = args.name
+        if not job_name:
+            job_name = os.path.basename(wdl_filename).lstrip(".")
+            try:
+                for punct in (".", "?"):
+                    if job_name.index(punct) > 0:
+                        job_name = job_name[: job_name.index(punct)]
+            except ValueError:
+                pass
+            job_name = ("miniwdl_run_" + job_name)[:128]
+        # pass most arguments through to miniwdl-run-s3upload inside workflow job
+        miniwdl_run_cmd = ["miniwdl-run-s3upload"] + unused_args
+        miniwdl_run_cmd.extend(["--dir", args.dir])
+        miniwdl_run_cmd.extend(["--s3upload", args.s3upload] if args.s3upload else [])
+        miniwdl_run_cmd.extend(["--delete-after", args.delete_after] if args.delete_after else [])
+    return (job_name, miniwdl_run_cmd)
 
-    # With Fargate Batch we need to specify an IAM role for the workflow job at submission time.
-    # (Unlike non-Fargate Batch, where a role is associated with the EC2 instance profile in the
-    # compute environment). We need the role's ARN which is rather unwieldy, so rather than always
-    # making user provide through command-line flags or environment, try to read it from the
-    # WorkflowEngineRoleArn tag on the job queue. Infra provisioning (CloudFormation, Terraform,
-    # etc.) can set this tag as a convenience.
-    aws_batch = boto3.client("batch", region_name=region_name)
-    if not args.workflow_role:
-        try:
-            args.workflow_role = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
-                "jobQueues"
-            ][0]["tags"]["WorkflowEngineRoleArn"]
-            assert args.workflow_role.startswith("arn:aws:iam::")
-        except:
-            if not args.workflow_role:
-                print(
-                    "Unable to read ARN of workflow engine IAM role from WorkflowEngineRoleArn tag of workflow job queue."
-                    " Double-check --workflow-queue, or set --workflow-role or environment MINIWDL__AWS__WORKFLOW_ROLE.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+
+def detect_workflow_role(aws_batch, workflow_queue, verbose=False):
+    """
+    With Fargate Batch, we need to specify an IAM role for the workflow job at submission time.
+    (Unlike EC2 Batch, where a role is associated with the EC2 instance profile in the compute
+    environment). We need the role's ARN which is rather unwieldy, so rather than always making
+    user provide that through command-line flags or environment, try to read it from the
+    WorkflowEngineRoleArn tag on the job queue. Infra provisioning (CloudFormation, Terraform,
+    etc.) can set this tag as a convenience.
+    """
+    try:
+        workflow_role = aws_batch.describe_job_queues(jobQueues=[workflow_queue])["jobQueues"][0][
+            "tags"
+        ]["WorkflowEngineRoleArn"]
         if verbose:
             print(
                 "Workflow engine IAM role (from WorkflowEngineRoleArn tag of workflow queue): "
-                + args.workflow_role,
+                + workflow_role,
                 file=sys.stderr,
             )
-
-    # Register & submit workflow job
-    workflow_job_def = aws_batch.register_job_definition(
-        jobDefinitionName=args.name,
-        platformCapabilities=["FARGATE"],
-        type="container",
-        containerProperties={
-            "fargatePlatformConfiguration": {"platformVersion": "1.4.0"},
-            "executionRoleArn": args.workflow_role,
-            "jobRoleArn": args.workflow_role,
-            "resourceRequirements": [
-                {"type": "VCPU", "value": str(args.cpu)},
-                {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
-            ],
-            "networkConfiguration": {"assignPublicIp": "ENABLED"},
-            "volumes": [
-                {
-                    "name": "efs",
-                    "efsVolumeConfiguration": {
-                        "fileSystemId": fs_id,
-                        "transitEncryption": "ENABLED",
-                        "authorizationConfig": {"accessPointId": args.fsap},
-                    },
-                }
-            ],
-            "mountPoints": [{"containerPath": "/mnt/efs", "sourceVolume": "efs"}],
-            "image": args.image,
-            "command": miniwdl_run_cmd,
-            "environment": environment,
-        },
-    )
-    workflow_job_def_handle = (
-        f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
-    )
-    try:
-        workflow_job_id = aws_batch.submit_job(
-            jobName=args.name,
-            jobQueue=args.workflow_queue,
-            jobDefinition=workflow_job_def_handle,
-        )["jobId"]
-        if verbose:
-            print(f"Submitted {args.name} to {args.workflow_queue}:", file=sys.stderr)
-            sys.stderr.flush()
-        print(workflow_job_id)
-        if not sys.stdout.isatty():
-            print(workflow_job_id, file=sys.stderr)
-    finally:
-        aws_batch.deregister_job_definition(jobDefinition=workflow_job_def_handle)
-
-    exit_code = 0
-    if args.wait or args.follow:
-        exit_code = wait(aws_region_name, aws_batch, workflow_job_id, args.follow)
-    sys.exit(exit_code)
+        assert workflow_role.startswith("arn:aws:iam::")
+        return workflow_role
+    except:
+        print(
+            "Unable to read ARN of workflow engine IAM role from WorkflowEngineRoleArn tag of workflow job queue."
+            " Double-check --workflow-queue, or set --workflow-role or environment MINIWDL__AWS__WORKFLOW_ROLE.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow):

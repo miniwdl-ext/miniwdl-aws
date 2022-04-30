@@ -147,7 +147,7 @@ Pull requests are welcome! For help, open an issue here or drop in on [#miniwdl 
 **Code formatting and linting.** To prepare your code to pass the CI checks,
 
 ```
-pip3 install --upgrade pre-commit black flake8 pylint
+pip3 install --upgrade -r test/requirements.txt
 pre-commit run --all-files
 ```
 
