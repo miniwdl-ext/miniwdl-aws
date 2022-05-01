@@ -139,6 +139,7 @@ Recommendations:
     * Configure EFS Access Point to use a nonzero user ID, with an owned filesystem root directory
 * Use non-default VPC security group for EFS & compute environments
     * EFS must be accessible to all containers through TCP port 2049
+    * Add `--no-public-ip` if the workflow compute environment has private subnet(s) & NAT
 
 ## Appendix 2: Contributing
 
