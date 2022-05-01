@@ -8,9 +8,6 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 assert "AWS_DEFAULT_REGION" in os.environ
-assert os.environ.get("MINIWDL__AWS__FSAP", "").startswith(
-    "fsap-"
-), "set environment MINIWDL__AWS__FSAP to EFS Access Point ID (fsap-xxxx)"
 assert (
     "MINIWDL__AWS__WORKFLOW_IMAGE" in os.environ
     and "miniwdl-aws" in os.environ["MINIWDL__AWS__WORKFLOW_IMAGE"]
@@ -18,7 +15,6 @@ assert (
 assert (
     "MINIWDL__AWS__WORKFLOW_QUEUE" in os.environ
 ), "set MINIWDL__AWS__WORKFLOW_QUEUE to Batch queue name"
-assert "MINIWDL__AWS__TASK_QUEUE" in os.environ, "set MINIWDL__AWS__TASK_QUEUE to Batch queue name"
 assert (
     "MINIWDL_AWS_TEST_BUCKET" in os.environ
 ), "set MINIWDL_AWS_TEST_BUCKET to test S3 bucket (name only)"
@@ -83,7 +79,16 @@ def get_s3uri(uri):
 
 def test_miniwdl_run_self_test(aws_batch):
     subprocess.run(
-        ["python3", "-m", "miniwdl_aws", "--follow", "--self-test", "--no-cache"],
+        [
+            "python3",
+            "-m",
+            "miniwdl_aws",
+            "--follow",
+            "--self-test",
+            "--no-cache",
+            "--mount",
+            "/mnt/shared",
+        ],
         cwd=os.path.dirname(os.path.dirname(__file__)),
         check=True,
     )

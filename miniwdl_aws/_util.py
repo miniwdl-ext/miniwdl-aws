@@ -4,6 +4,7 @@ import base64
 import json
 import uuid
 import requests
+import subprocess
 from WDL._util import StructuredLogMessage as _
 
 
@@ -181,6 +182,33 @@ def detect_gwfcore_batch_queue(logger, efs_id, **kwargs):
             )
         )
         return None
+
+
+def subprocess_run_with_clean_exit(*args, check=False, **kwargs):
+    """
+    As subprocess.run(*args, **kwargs), but in the event of a SystemExit, KeyboardInterrupt, or
+    BrokenPipe exception, sends SIGTERM to the subprocess and waits for it to exit before
+    re-raising. Typically paired with signal handlers for SIGTERM/SIGINT/etc. to raise SystemExit.
+    """
+
+    assert "timeout" not in kwargs
+    with subprocess.Popen(*args, **kwargs) as subproc:
+        while True:
+            try:
+                stdout, stderr = subproc.communicate(timeout=0.1)
+                assert isinstance(subproc.returncode, int)
+                completed = subprocess.CompletedProcess(
+                    subproc.args, subproc.returncode, stdout, stderr
+                )
+                if check:
+                    completed.check_returncode()
+                return completed
+            except (SystemExit, KeyboardInterrupt, BrokenPipeError):
+                subproc.terminate()
+                subproc.communicate()
+                raise
+            except subprocess.TimeoutExpired:
+                pass
 
 
 END_OF_LOG = "[miniwdl_run_s3upload] -- END OF LOG --"

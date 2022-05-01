@@ -54,7 +54,7 @@ Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl 
 
 Miniwdl runs the workflow in a directory beneath `/mnt/efs/miniwdl_run` (override with `--dir`). The outputs also remain cached there for potential reuse in future runs.
 
-Given the EFS-centric I/O model, you'll need a way to manage the filesystem contents remotely. Deploy an instance or container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
+Given the EFS-centric I/O model, you'll need a way to manage the filesystem contents remotely. The companion recipe [lambdash-efs](https://github.com/miniwdl-ext/lambdash-efs) is one option. Or deploy an instance/container mounting your EFS, to access via SSH or web app (e.g. [JupyterHub](https://jupyter.org/hub), [Cloud Commander](http://cloudcmd.io/), [VS Code server](https://github.com/cdr/code-server)).
 
 You can also automate cleanup of EFS run directories by setting `miniwdl-aws-submit --s3upload` and:
 
@@ -90,7 +90,7 @@ Management tips:
 
 If the terminal log isn't available (through Studio or `miniwdl-submit-awsbatch --follow`) to trace a workflow failure, look for miniwdl's usual log files written in the run directory on EFS or copied to S3.
 
-Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html) under the `/aws/batch/job` group and a log stream name reported in miniwdl's log. Using `miniwdl_submit_awsbatch`, the workflow job's log is also forwarded. CloudWatch Logs indexes the logs for structured search through the AWS Console & API.
+Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html) under the `/aws/batch/job` group and a log stream name reported in miniwdl's log. Using `miniwdl-aws-submit`, the workflow job's log is also forwarded. CloudWatch Logs indexes the logs for structured search through the AWS Console & API.
 
 Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
@@ -112,7 +112,7 @@ Requirements:
             * `s3:Put*` on S3 bucket(s) for `--s3upload`
     * Batch Job Queue connected to compute environment
         * set `--task-queue` or `MINIWDL__AWS__TASK_QUEUE` to queue name
-4. Unattended workflow execution with `miniwdl_submit_awsbatch`:
+4. Unattended workflow execution with `miniwdl-aws-submit`:
     * Batch Compute Environment
         * Fargate resources
         * execution role
@@ -139,10 +139,20 @@ Recommendations:
     * Configure EFS Access Point to use a nonzero user ID, with an owned filesystem root directory
 * Use non-default VPC security group for EFS & compute environments
     * EFS must be accessible to all containers through TCP port 2049
+    * Add `--no-public-ip` if the workflow compute environment has private subnet(s) & NAT
 
-## Appendix 2: running tests
+## Appendix 2: Contributing
 
-In an AWS-credentialed terminal session,
+Pull requests are welcome! For help, open an issue here or drop in on [#miniwdl in the OpenWDL Slack](https://openwdl.slack.com/archives/C02JCRJU79T).
+
+**Code formatting and linting.** To prepare your code to pass the CI checks,
+
+```
+pip3 install --upgrade -r test/requirements.txt
+pre-commit run --all-files
+```
+
+**Running tests.** In an AWS-credentialed terminal session,
 
 ```
 MINIWDL__AWS__FSAP=fsap-xxxx \

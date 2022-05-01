@@ -1,20 +1,10 @@
-name: build
-on: [push, pull_request]
+name: ghcr_image
+on: [push]
 
 jobs:
 
-  lint:
-    runs-on: ubuntu-20.04
-    steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-    - name: deps
-      run: sudo pip3 install --system --upgrade pre-commit black flake8
-    - name: pre-commit
-      run: pre-commit run --all-files
-
   ghcr_image:
+    if: github.repository == 'miniwdl-ext/miniwdl-aws' # don't run from forks
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
