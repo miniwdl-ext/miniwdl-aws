@@ -30,6 +30,7 @@ from ._util import (
 class BatchJob(WDL.runtime.task_container.TaskContainer):
     @classmethod
     def global_init(cls, cfg, logger):
+        cls._set_config_defaults(cfg, logger)
         cls._region_name = detect_aws_region(cfg)
         assert (
             cls._region_name
@@ -124,6 +125,32 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         )
 
     @classmethod
+    def _set_config_defaults(cls, cfg, logger):
+        # Set defaults in the cfg: ConfigLoader object so that our subsequent cfg.get* ops won't
+        # throw if the user's custom .cfg file, which we don't necessarily control, omits them.
+        #
+        # This repo's miniwdl_aws.cfg also sets these options, and takes precedence in typical
+        # operations using the auto-built Docker image. But consider the case where a user has
+        # edited/written their own .cfg file, and we release a new plugin version with a new
+        # config option. That'd break their existing .cfg file unless the option has a default
+        # of last resort set here.
+        cfg.plugin_defaults(
+            {
+                "aws": {
+                    "job_timeout": 864000,
+                    "describe_period": 1,
+                    "submit_period": 1,
+                    "submit_period_b": 0.0,
+                    "submit_period_c": 0.0,
+                    "boto3_retries": {"max_attempts": 5, "mode": "standard"},
+                    "retry_wait": 20,
+                    "container_sync": False,
+                    "job_tags": dict(),
+                }
+            }
+        )
+
+    @classmethod
     def detect_resource_limits(cls, cfg, logger):
         return cls._resource_limits
 
@@ -157,11 +184,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         return os.path.join(self.host_dir, "stderr.txt")
 
     def reset(self, logger) -> None:
-        cooldown = (
-            self.cfg.get_float("aws", "retry_wait")
-            if self.cfg.has_option("aws", "retry_wait")
-            else 0.0
-        )
+        cooldown = self.cfg.get_float("aws", "retry_wait")
         if cooldown > 0.0:
             logger.info(
                 _(
@@ -179,11 +202,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         Run task
         """
         try:
-            boto3_retries = (
-                self.cfg.get_dict("aws", "boto3_retries")
-                if self.cfg.has_option("aws", "boto3_retries")
-                else {"max_attempts": 5, "mode": "standard"}
-            )
+            boto3_retries = self.cfg.get_dict("aws", "boto3_retries")
             aws_batch = boto3.Session().client(  # Session() needed for thread safety
                 "batch",
                 region_name=self._region_name,
@@ -244,9 +263,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
         self._cleanup_job_definition(logger, cleanup, aws_batch, job_def_handle)
 
-        job_tags = {}
-        if self.cfg.has_option("aws", "job_tags"):
-            job_tags = self.cfg.get_dict("aws", "job_tags")
+        job_tags = self.cfg.get_dict("aws", "job_tags")
         if "AWS_BATCH_JOB_ID" in os.environ:
             # If we find ourselves running inside an AWS Batch job, tag the new job identifying
             # ourself as the "parent" job.
@@ -281,9 +298,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             "exit_code=0",
             "bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
         ]
-        if self.cfg.has_option("aws", "container_sync") and self.cfg.get_bool(
-            "aws", "container_sync"
-        ):
+        if self.cfg.get_bool("aws", "container_sync"):
             commands.append("find . -type f | xargs sync")
             commands.append("sync ../stdout.txt ../stderr.txt")
         commands.append("exit $exit_code")
@@ -464,11 +479,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
     def _submit_period_multiplier(self):
         if self._describer.jobs:
-            b = (
-                self.cfg.get_float("aws", "submit_period_b")
-                if self.cfg.has_option("aws", "submit_period_b")
-                else 0.0
-            )
+            b = self.cfg.get_float("aws", "submit_period_b")
             if b > 0.0:
                 t = time.time() - self._init_time
                 c = self.cfg.get_float("aws", "submit_period_c")
