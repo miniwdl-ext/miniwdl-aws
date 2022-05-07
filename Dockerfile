@@ -10,7 +10,7 @@ RUN yum check-update; yum install -y \
 
 # miniwdl
 RUN pip3 install --upgrade \
-        miniwdl==1.5.1 \
+        miniwdl==1.5.2 \
         reentry \
         boto3 \
         requests
