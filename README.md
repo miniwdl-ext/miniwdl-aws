@@ -91,6 +91,7 @@ Management tips:
 * Temporarily provision higher throughput than bursting mode provides (24-hour minimum provisioning commitment).
 * Configure miniwdl and AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
 * Spread out separate workflow runs over time or across multiple EFS file systems.
+* Code WDL tasks to write any purely-temporary files into `$TMPDIR`, which may use local scratch space, instead of the EFS working directory.
 
 ## Logs & troubleshooting
 
