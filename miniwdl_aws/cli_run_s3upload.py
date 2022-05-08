@@ -76,6 +76,16 @@ def miniwdl_run_s3upload_inner():
         print("--delete-after requires --s3upload", file=sys.stderr)
         sys.exit(1)
 
+    if args.s3upload:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            testfile = os.path.join(tmpdir, ".test.miniwdl-run-s3upload")
+            with open(testfile, "w") as outfile:
+                print(
+                    "miniwdl-run-s3upload created this object to test bucket permissions.",
+                    file=outfile,
+                )
+            upload1(testfile, args.s3upload + ("/" if not args.s3upload.endswith("/") else ""))
+
     cmd = ["miniwdl", "run"] + unused_args
     if "--error-json" not in unused_args:
         cmd.append("--error-json")
@@ -180,10 +190,7 @@ def miniwdl_run_s3upload_inner():
     with open(outputs_s3_json + ".tmp", "w") as outfile:
         print(json.dumps(rewritten_outputs, indent=2), file=outfile)
     os.rename(outputs_s3_json + ".tmp", outputs_s3_json)
-    subprocess_run_with_clean_exit(
-        ["aws", "s3", "cp", "--no-progress", outputs_s3_json, s3_upload_folder + "outputs.json"],
-        check=True,
-    )
+    upload1(outputs_s3_json, s3_upload_folder + "outputs.json")
     print(
         f"[miniwdl_run_s3upload] uploaded {s3_upload_folder}outputs.json",
         file=sys.stderr,

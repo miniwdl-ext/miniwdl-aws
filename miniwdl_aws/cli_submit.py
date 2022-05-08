@@ -18,11 +18,12 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 
 
 def miniwdl_submit_awsbatch(argv):
-    # Configure from arguments & environment
-    args, unused_args = parse_args_and_env(argv)
+    # Configure from arguments/environment/tags
+    args, unused_args = parse_args(argv)
     verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
-
-    # TODO: accept local WDL source code; check, zip, & attach it
+    detect_env_args(args)
+    if verbose:
+        print("Workflow job queue: " + args.workflow_queue, file=sys.stderr)
 
     aws_region_name = detect_aws_region(None)
     if not aws_region_name:
@@ -32,9 +33,18 @@ def miniwdl_submit_awsbatch(argv):
         )
         sys.exit(1)
     aws_batch = boto3.client("batch", region_name=aws_region_name)
-    if not args.workflow_role:
-        args.workflow_role = detect_workflow_role(aws_batch, args.workflow_queue, verbose)
+    detect_tags_args(aws_batch, args)
+
+    if verbose:
+        print("Workflow IAM role ARN: " + args.workflow_role, file=sys.stderr)
+        print("Task job queue: " + args.task_queue, file=sys.stderr)
+        print("EFS Access Point: " + args.fsap, file=sys.stderr)
+
     fs_id = efs_id_from_access_point(aws_region_name, args.fsap)
+    if verbose:
+        print("EFS: " + fs_id, file=sys.stderr)
+
+    # TODO: accept local WDL source code; check, zip, & attach it
 
     # Prepare workflow job: command, environment, and container properties
     job_name, miniwdl_run_cmd = form_miniwdl_run_cmd(args, unused_args)
@@ -66,7 +76,7 @@ def miniwdl_submit_awsbatch(argv):
                 extra_env.add(k)
 
     if verbose:
-        print("Image: " + args.image, file=sys.stderr)
+        print("Workflow job image: " + args.image, file=sys.stderr)
         if extra_env:
             print(
                 "Passing through environment variables (--no-env to disable): "
@@ -129,11 +139,17 @@ def miniwdl_submit_awsbatch(argv):
     # Wait for workflow job, if requested
     exit_code = 0
     if args.wait or args.follow:
-        exit_code = wait(aws_region_name, aws_batch, workflow_job_id, args.follow)
+        exit_code = wait(
+            aws_region_name,
+            aws_batch,
+            workflow_job_id,
+            args.follow,
+            expect_log_eof=not args.self_test,
+        )
     sys.exit(exit_code)
 
 
-def parse_args_and_env(argv):
+def parse_args(argv):
     if "COLUMNS" not in os.environ:
         os.environ["COLUMNS"] = "100"
     parser = argparse.ArgumentParser(
@@ -141,7 +157,7 @@ def parse_args_and_env(argv):
         description="Launch `miniwdl run` on AWS Batch (+ EFS at /mnt/efs), itself launching additional"
         " Batch jobs to execute WDL tasks. Passed-through arguments to `miniwdl run` should refer to"
         " s3:// or /mnt/efs/ input paths, rather than the local filesystem.",
-        usage="miniwdl-aws-submit [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE --task-queue TASK_QUEUE --fsap fsap-xxxx",
+        usage="miniwdl-aws-submit [miniwdl_run_arg ...] --workflow-queue WORKFLOW_QUEUE",
         allow_abbrev=False,
     )
     group = parser.add_argument_group("AWS Batch")
@@ -150,11 +166,14 @@ def parse_args_and_env(argv):
         help="job queue for workflow job [env MINIWDL__AWS__WORKFLOW_QUEUE]",
     )
     group.add_argument(
-        "--task-queue", help="job queue for task jobs [env MINIWDL__AWS__TASK_QUEUE]"
+        "--task-queue",
+        help="job queue for task jobs [env MINIWDL__AWS__TASK_QUEUE"
+        " or detect from DefaultTaskQueue tag on workflow job queue",
     )
     group.add_argument(
         "--fsap",
-        help="EFS Access Point ID (fsap-xxxx) for mounting [env MINIWDL__AWS__FSAP]",
+        help="EFS Access Point ID (fsap-xxxx) for mounting [env MINIWDL__AWS__FSAP"
+        " or detect from DefaultFsap tag on workflow job queue]",
     )
     group.add_argument(
         "--mount", default="/mnt/efs", help="EFS mount point in all containers [/mnt/efs]"
@@ -163,16 +182,18 @@ def parse_args_and_env(argv):
     group.add_argument(
         "--workflow-role",
         help="ARN of execution+job role for workflow job [env MINIWDL__AWS__WORKFLOW_ROLE"
-        " or read from WorkflowEngineRoleArn tag on job queue]",
+        " or detect from WorkflowEngineRoleArn tag on workflow job queue]",
     )
     group.add_argument("--name", help="workflow job name [WDL filename]")
-    group.add_argument("--cpu", metavar="N", type=int, default=2, help="vCPUs for workflow job [2]")
+    group.add_argument(
+        "--cpu", metavar="N", type=str, default="1", help="vCPUs for workflow job [1]"
+    )
     group.add_argument(
         "--memory-GiB", metavar="N", type=int, default=4, help="memory for workflow job [4]"
     )
     group.add_argument(
         "--image",
-        help="miniwdl-aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
+        help="override miniwdl-aws Docker image tag for workflow job [env MINIWDL__AWS__WORKFLOW_IMAGE]",
     )
     group.add_argument(
         "--no-env", action="store_true", help="don't pass through MINIWDL__* environment variables"
@@ -208,7 +229,6 @@ def parse_args_and_env(argv):
     )
     parser.add_argument("--self-test", action="store_true", help="perform `miniwdl run_self_test`")
 
-    # Parse command line
     args, unused_args = parser.parse_known_args(argv[1:])
 
     if args.mount.endswith("/"):
@@ -220,13 +240,26 @@ def parse_args_and_env(argv):
         print(f"--dir must begin with {args.mount}", file=sys.stderr)
         sys.exit(1)
 
-    # Detect additional configuration from environment
+    return (args, unused_args)
+
+
+def detect_env_args(args):
+    """
+    Detect configuration set through environment variables (that weren't set by command-line args)
+    """
     args.fsap = args.fsap if args.fsap else os.environ.get("MINIWDL__AWS__FSAP", "")
     args.workflow_queue = (
         args.workflow_queue
         if args.workflow_queue
         else os.environ.get("MINIWDL__AWS__WORKFLOW_QUEUE", None)
     )
+    if not args.workflow_queue:
+        print(
+            "--workflow-queue is required (or environment variable MINIWDL__AWS__WORKFLOW_QUEUE)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    args.fsap = args.fsap if args.fsap else os.environ.get("MINIWDL__AWS__FSAP", "")
     args.task_queue = (
         args.task_queue if args.task_queue else os.environ.get("MINIWDL__AWS__TASK_QUEUE", None)
     )
@@ -235,12 +268,6 @@ def parse_args_and_env(argv):
         if args.workflow_role
         else os.environ.get("MINIWDL__AWS__WORKFLOW_ROLE", None)
     )
-    if not (args.fsap.startswith("fsap-") and args.workflow_queue and args.task_queue):
-        print(
-            "--fsap, --workflow-queue, and --task-queue all required (or environment variables MINIWDL__AWS__FSAP, MINIWDL__AWS__WORKFLOW_QUEUE, MINIWDL__AWS__TASK_QUEUE)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     args.image = args.image if args.image else os.environ.get("MINIWDL__AWS__WORKFLOW_IMAGE", None)
     if not args.image:
         import importlib_metadata
@@ -267,7 +294,53 @@ def parse_args_and_env(argv):
         else os.environ.get("MINIWDL__AWS__DELETE_AFTER_S3_UPLOAD", None)
     )
 
-    return (args, unused_args)
+
+def detect_tags_args(aws_batch, args):
+    """
+    If not otherwise set by command line arguments or environment, inspect tags of the workflow job
+    queue to detect default EFS Access Point ID (fsap-xxx), task job queue, and/or workflow role
+    ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the respective tags.
+    """
+    if not (args.fsap or args.task_queue or args.workflow_role):
+        workflow_queue_tags = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
+            "jobQueues"
+        ][0]["tags"]
+        if not args.fsap:
+            try:
+                args.fsap = workflow_queue_tags["DefaultFsap"]
+                assert args.fsap.startswith("fsap-")
+            except:
+                print(
+                    "Unable to detect default EFS Access Point (fsap-xxxx) from DefaultFsap tag of workflow job queue."
+                    " Set --fsap or environment variable MINIWDL__AWS__FSAP.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        if not args.task_queue:
+            args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
+            if not args.task_queue:
+                print(
+                    "Unable to detect default task job queue name from DefaultTaskQueue tag of workflow job queue."
+                    " Set --task-queue or environment variable MINIWDL__AWS__TASK_QUEUE.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        if not args.workflow_role:
+            # Workflow role ARN is needed for Fargate Batch (unlike EC2 Batch, where a role is
+            # associated with the EC2 instance profile in the compute environment).
+            try:
+                args.workflow_role = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
+                    "jobQueues"
+                ][0]["tags"]["WorkflowEngineRoleArn"]
+                assert args.workflow_role.startswith("arn:aws:iam::")
+            except:
+                if not args.workflow_role:
+                    print(
+                        "Unable to detect ARN of workflow engine IAM role from WorkflowEngineRoleArn tag of workflow job queue."
+                        " Double-check --workflow-queue, or set --workflow-role or environment MINIWDL__AWS__WORKFLOW_ROLE.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
 
 
 def form_miniwdl_run_cmd(args, unused_args):
@@ -303,37 +376,7 @@ def form_miniwdl_run_cmd(args, unused_args):
     return (job_name, miniwdl_run_cmd)
 
 
-def detect_workflow_role(aws_batch, workflow_queue, verbose=False):
-    """
-    With Fargate Batch, we need to specify an IAM role for the workflow job at submission time.
-    (Unlike EC2 Batch, where a role is associated with the EC2 instance profile in the compute
-    environment). We need the role's ARN which is rather unwieldy, so rather than always making
-    user provide that through command-line flags or environment, try to read it from the
-    WorkflowEngineRoleArn tag on the job queue. Infra provisioning (CloudFormation, Terraform,
-    etc.) can set this tag as a convenience.
-    """
-    try:
-        workflow_role = aws_batch.describe_job_queues(jobQueues=[workflow_queue])["jobQueues"][0][
-            "tags"
-        ]["WorkflowEngineRoleArn"]
-        if verbose:
-            print(
-                "Workflow engine IAM role (from WorkflowEngineRoleArn tag of workflow queue): "
-                + workflow_role,
-                file=sys.stderr,
-            )
-        assert workflow_role.startswith("arn:aws:iam::")
-        return workflow_role
-    except:
-        print(
-            "Unable to read ARN of workflow engine IAM role from WorkflowEngineRoleArn tag of workflow job queue."
-            " Double-check --workflow-queue, or set --workflow-role or environment MINIWDL__AWS__WORKFLOW_ROLE.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-
-def wait(aws_region_name, aws_batch, workflow_job_id, follow):
+def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):
     """
     Wait for workflow job to complete & return its exit code; optionally tail its log to stderr
     """
@@ -370,7 +413,7 @@ def wait(aws_region_name, aws_batch, workflow_job_id, follow):
                 if "container" in job_desc and "exitCode" in job_desc["container"]:
                     exit_code = job_desc["container"]["exitCode"]
                     assert exit_code != 0
-        if follow and log_follower and not saw_end:
+        if expect_log_eof and follow and log_follower and not saw_end:
             # give straggler log messages a few seconds to appear
             time.sleep(3.0)
             for event in log_follower.new_events():
