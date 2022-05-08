@@ -54,7 +54,7 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 
 Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl_aws.cfg](miniwdl_aws.cfg) for various options preconfigured in the workflow job container.
 
-Files already resident on EFS can be used as workflow inputs with their `/mnt/efs` paths (which may not exist on the submitting laptop).
+EFS is mounted at `/mnt/efs` in the workflow and task jobs. Files already resident on EFS can be used as workflow inputs with their `/mnt/efs` paths (which may not exist on the submitting laptop).
 
 ## Run directories on EFS
 
