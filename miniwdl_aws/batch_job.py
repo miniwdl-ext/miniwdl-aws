@@ -156,7 +156,6 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
     def __init__(self, cfg, run_id, host_dir):
         super().__init__(cfg, run_id, host_dir)
-        self._observed_states = set()
         self._logStreamName = None
         self._inputs_copied = False
         # We'll direct Batch to mount EFS inside the task container at the same location we have
@@ -201,8 +200,9 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         """
         Run task
         """
+        self._observed_states = set()
+        boto3_retries = self.cfg.get_dict("aws", "boto3_retries")
         try:
-            boto3_retries = self.cfg.get_dict("aws", "boto3_retries")
             aws_batch = boto3.Session().client(  # Session() needed for thread safety
                 "batch",
                 region_name=self._region_name,
