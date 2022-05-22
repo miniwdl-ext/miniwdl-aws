@@ -9,7 +9,7 @@ import math
 import time
 import threading
 import heapq
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 import boto3
 import botocore
 import WDL
@@ -194,6 +194,8 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             time.sleep(cooldown)
 
         rmtree_atomic(self.host_work_dir())
+        with suppress(FileNotFoundError):
+            os.unlink(self.host_stderr_txt() + ".offset")  # PygtailLogger state file
         super().reset(logger)
 
     def _run(self, logger, terminating, command):
