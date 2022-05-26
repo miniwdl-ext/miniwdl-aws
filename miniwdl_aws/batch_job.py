@@ -314,6 +314,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 {"type": "VCPU", "value": str(vcpu)},
                 {"type": "MEMORY", "value": str(memory_mbytes)},
             ],
+            "privileged": self.runtime_values.get("privileged", False),
         }
 
         if self.cfg["task_runtime"].get_bool("as_user"):
