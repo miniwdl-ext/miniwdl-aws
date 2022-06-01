@@ -110,7 +110,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         ), "Missing AWS Batch job queue configuration ([aws] task_queue / MINIWDL__AWS__TASK_QUEUE)"
 
         # TODO: query Batch compute environment for resource limits
-        cls._resource_limits = {"cpu": 64, "mem_bytes": 261992870916}
+        cls._resource_limits = {"cpu": 9999, "mem_bytes": 999999999999999}
         cls._submit_lock = threading.Lock()
         cls._last_submit_time = [0.0]
         cls._init_time = time.time()
