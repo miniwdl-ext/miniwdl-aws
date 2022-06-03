@@ -298,7 +298,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         commands = [
             f"cd {self.container_dir}/work",
             "exit_code=0",
-            "bash ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
+            "bash -l ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
         ]
         if self.cfg.get_bool("aws", "container_sync"):
             commands.append("find . -type f | xargs sync")
