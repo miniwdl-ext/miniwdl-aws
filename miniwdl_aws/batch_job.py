@@ -305,15 +305,20 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             commands.append("sync ../stdout.txt ../stderr.txt")
         commands.append("exit $exit_code")
 
+        resource_requirements = [
+            {"type": "VCPU", "value": str(vcpu)},
+            {"type": "MEMORY", "value": str(memory_mbytes)},
+        ]
+
+        if self.runtime_values.get("gpu", False):
+            resource_requirements += [{"type": "GPU", "value": "1"}]
+
         container_properties = {
             "image": image_tag,
             "volumes": volumes,
             "mountPoints": mount_points,
             "command": ["/bin/bash", "-ec", "\n".join(commands)],
-            "resourceRequirements": [
-                {"type": "VCPU", "value": str(vcpu)},
-                {"type": "MEMORY", "value": str(memory_mbytes)},
-            ],
+            "resourceRequirements": resource_requirements,
             "privileged": self.runtime_values.get("privileged", False),
         }
 
