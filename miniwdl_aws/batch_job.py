@@ -311,9 +311,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         ]
 
         if self.runtime_values.get("gpu", False):
-            resource_requirements += [
-                {"type": "GPU", "value": "1"}
-            ]
+            resource_requirements += [{"type": "GPU", "value": "1"}]
 
         container_properties = {
             "image": image_tag,
