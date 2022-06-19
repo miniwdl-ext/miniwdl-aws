@@ -318,6 +318,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             "volumes": volumes,
             "mountPoints": mount_points,
             "command": ["/bin/bash", "-ec", "\n".join(commands)],
+            "environment": [
+                {"name": ev_name, "value": ev_value}
+                for ev_name, ev_value in self.runtime_values.get("env", dict())
+            ],
             "resourceRequirements": resource_requirements,
             "privileged": self.runtime_values.get("privileged", False),
         }
