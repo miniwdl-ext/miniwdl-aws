@@ -7,6 +7,7 @@ workers.
 import os
 import math
 import time
+import json
 import threading
 import heapq
 from contextlib import ExitStack, suppress
@@ -15,7 +16,7 @@ import botocore
 import WDL
 import WDL.runtime.task_container
 import WDL.runtime._statusbar
-from WDL._util import PygtailLogger, rmtree_atomic, symlink_force
+from WDL._util import PygtailLogger, rmtree_atomic, symlink_force, write_atomic
 from WDL._util import StructuredLogMessage as _
 from ._util import (
     detect_aws_region,
@@ -419,6 +420,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         while exit_code is None:
             time.sleep(describe_period)
             job_desc = self._describer.describe(aws_batch, job_id, describe_period)
+            write_atomic(
+                json.dumps(job_desc, indent=2, sort_keys=True),
+                os.path.join(self.host_dir, f"awsBatchJobDetail.{job_id}.json"),
+            )
             job_status = job_desc["status"]
             if "container" in job_desc and "logStreamName" in job_desc["container"]:
                 self._logStreamName = job_desc["container"]["logStreamName"]
