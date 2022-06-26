@@ -16,7 +16,7 @@ import botocore
 import WDL
 import WDL.runtime.task_container
 import WDL.runtime._statusbar
-from WDL._util import PygtailLogger, rmtree_atomic, symlink_force, write_atomic
+from WDL._util import rmtree_atomic, symlink_force, write_atomic
 from WDL._util import StructuredLogMessage as _
 from ._util import (
     detect_aws_region,
@@ -413,9 +413,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         """
         describe_period = self.cfg.get_float("aws", "describe_period")
         cleanup.callback((lambda job_id: self._describer.unsubscribe(job_id)), job_id)
-        poll_stderr = cleanup.enter_context(
-            PygtailLogger(logger, self.host_stderr_txt(), callback=self.stderr_callback)
-        )
+        poll_stderr = cleanup.enter_context(self.poll_stderr_context(logger))
         exit_code = None
         while exit_code is None:
             time.sleep(describe_period)
@@ -441,13 +439,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 if job_status == "STARTING" or (
                     job_status == "RUNNING" and "STARTING" not in self._observed_states
                 ):
-                    # TODO: base TaskContainer should handle this, for separation of concerns
-                    cleanup.enter_context(
-                        WDL.runtime._statusbar.task_running(
-                            self.runtime_values.get("cpu", 1),
-                            self.runtime_values.get("memory_reservation", 0),
-                        )
-                    )
+                    cleanup.enter_context(self.task_running_context())
                 if job_status not in (
                     "SUBMITTED",
                     "PENDING",
