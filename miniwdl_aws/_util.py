@@ -76,8 +76,8 @@ def detect_sagemaker_studio_efs(logger, **kwargs):
         )
         efs_uid = profile["HomeEfsFileSystemUid"]
         assert efs_id and efs_uid
-        efs_home = f"/{efs_uid}/miniwdl"
-        efs_mount = os.path.join(os.getenv("HOME"), "miniwdl")
+        efs_home = f"/{efs_uid}"  # home directory on EFS
+        efs_mount = os.getenv("HOME")  # where the EFS home directory is mounted inside Studio
         logger.notice(
             _(
                 "detected SageMaker Studio",
