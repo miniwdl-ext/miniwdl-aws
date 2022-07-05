@@ -3,19 +3,12 @@
 
 FROM public.ecr.aws/amazonlinux/amazonlinux:2
 
-# dependencies
+# rpm dependencies
 RUN yum check-update; yum install -y \
         python3-pip \
         awscli
 
-# miniwdl
-RUN pip3 install --upgrade \
-        miniwdl==1.5.2 \
-        reentry \
-        boto3 \
-        requests
-
-# miniwdl-aws
+# miniwdl-aws (and PyPI dependencies listed in setup.py)
 COPY ./ /tmp/miniwdl-aws/
 RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 
