@@ -24,7 +24,7 @@ jobs:
         TAG="$(git describe --tags --always --dirty)"
 
         docker pull public.ecr.aws/amazonlinux/amazonlinux:2
-        docker build -t "${REPO}:${TAG}" .
+        docker build --no-cache -t "${REPO}:${TAG}" .
         IMAGE_ID="$(docker inspect ${REPO}:${TAG} | jq -r .[0].Id)"
 
         docker push "${REPO}:${TAG}"
