@@ -31,7 +31,6 @@ from ._util import (
 class BatchJob(WDL.runtime.task_container.TaskContainer):
     @classmethod
     def global_init(cls, cfg, logger):
-        cls._set_config_defaults(cfg, logger)
         cls._region_name = detect_aws_region(cfg)
         assert (
             cls._region_name
@@ -128,32 +127,6 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         )
 
     @classmethod
-    def _set_config_defaults(cls, cfg, logger):
-        # Set defaults in the cfg: ConfigLoader object so that our subsequent cfg.get* ops won't
-        # throw if the user's custom .cfg file, which we don't necessarily control, omits them.
-        #
-        # This repo's miniwdl_aws.cfg also sets these options, and takes precedence in typical
-        # operations using the auto-built Docker image. But consider the case where a user has
-        # edited/written their own .cfg file, and we release a new plugin version with a new
-        # config option. That'd break their existing .cfg file unless the option has a default
-        # of last resort set here.
-        cfg.plugin_defaults(
-            {
-                "aws": {
-                    "job_timeout": 864000,
-                    "describe_period": 1,
-                    "submit_period": 1,
-                    "submit_period_b": 0.0,
-                    "submit_period_c": 0.0,
-                    "boto3_retries": {"max_attempts": 5, "mode": "standard"},
-                    "retry_wait": 20,
-                    "container_sync": False,
-                    "job_tags": dict(),
-                }
-            }
-        )
-
-    @classmethod
     def detect_resource_limits(cls, cfg, logger):
         return cls._resource_limits
 
@@ -186,7 +159,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         return os.path.join(self.host_dir, "stderr.txt")
 
     def reset(self, logger) -> None:
-        cooldown = self.cfg.get_float("aws", "retry_wait")
+        cooldown = self.cfg.get_float("aws", "retry_wait", 20.0)
         if cooldown > 0.0:
             logger.info(
                 _(
@@ -206,7 +179,9 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         Run task
         """
         self._observed_states = set()
-        boto3_retries = self.cfg.get_dict("aws", "boto3_retries")
+        boto3_retries = self.cfg.get_dict(
+            "aws", "boto3_retries", {"max_attempts": 5, "mode": "standard"}
+        )
         try:
             aws_batch = boto3.Session().client(  # Session() needed for thread safety
                 "batch",
@@ -216,7 +191,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             with ExitStack() as cleanup:
                 # submit Batch job (with request throttling)
                 job_id = None
-                submit_period = self.cfg.get_float("aws", "submit_period")
+                submit_period = self.cfg.get_float("aws", "submit_period", 1.0)
                 while True:
                     with self._submit_lock:
                         if terminating():
@@ -268,7 +243,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
         self._cleanup_job_definition(logger, cleanup, aws_batch, job_def_handle)
 
-        job_tags = self.cfg.get_dict("aws", "job_tags")
+        job_tags = self.cfg.get_dict("aws", "job_tags", {})
         if "AWS_BATCH_JOB_ID" in os.environ:
             # If we find ourselves running inside an AWS Batch job, tag the new job identifying
             # ourself as the "parent" job.
@@ -278,7 +253,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             jobName=job_name,
             jobQueue=self._job_queue,
             jobDefinition=job_def_handle,
-            timeout={"attemptDurationSeconds": self.cfg.get_int("aws", "job_timeout")},
+            timeout={"attemptDurationSeconds": self.cfg.get_int("aws", "job_timeout", 86400)},
             tags=job_tags,
         )
         logger.info(
@@ -303,7 +278,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             "exit_code=0",
             "bash -l ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
         ]
-        if self.cfg.get_bool("aws", "container_sync"):
+        if self.cfg.get_bool("aws", "container_sync", False):
             commands.append("find . -type f | xargs sync")
             commands.append("sync ../stdout.txt ../stderr.txt")
         commands.append("exit $exit_code")
@@ -350,7 +325,9 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         command/stdout/stderr files.
         """
 
-        # prepare control files
+        # Prepare control files. We do NOT use super().touch_mount_point(...) because it fails if
+        # the desired mount point already exists; which it may in our case after a retry (see
+        # self.host_work_dir() override above.)
         with open(os.path.join(self.host_dir, "command"), "w") as outfile:
             outfile.write(command)
         with open(self.host_stdout_txt(), "w"):
@@ -413,7 +390,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         """
         Poll for Batch job success or failure & return exit code
         """
-        describe_period = self.cfg.get_float("aws", "describe_period")
+        describe_period = self.cfg.get_float("aws", "describe_period", 1.0)
         cleanup.callback((lambda job_id: self._describer.unsubscribe(job_id)), job_id)
         poll_stderr = cleanup.enter_context(self.poll_stderr_context(logger))
         exit_code = None
@@ -490,10 +467,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
     def _submit_period_multiplier(self):
         if self._describer.jobs:
-            b = self.cfg.get_float("aws", "submit_period_b")
+            b = self.cfg.get_float("aws", "submit_period_b", 0.0)
             if b > 0.0:
                 t = time.time() - self._init_time
-                c = self.cfg.get_float("aws", "submit_period_c")
+                c = self.cfg.get_float("aws", "submit_period_c", 0.0)
                 return max(1.0, c - t / b)
         return 1.0
 
