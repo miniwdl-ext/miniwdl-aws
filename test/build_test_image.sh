@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 # login to ECR
 AWS_REGION="$(aws configure get region)"
-ECR_REGISTRY_ID="$(aws ecr describe-registry | jq -r .registryId)"
+ECR_REGISTRY_ID="$(aws ecr describe-registry --query "registryId" --output text)"
 ECR_REPO="${ECR_REGISTRY_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/miniwdl-aws"
 aws ecr get-login-password --region $(aws configure get region) \
     | >&2 docker login --username AWS --password-stdin $ECR_REPO
