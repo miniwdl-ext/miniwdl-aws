@@ -1,3 +1,17 @@
+# Fork improvements
+
+## CloudFormation template for cloud setup
+Deployment scropt for **miniwdl-aws cloud**, re[placement Terraform-based script [**miniwdl-aws-terraform**](https://github.com/miniwdl-ext/miniwdl-aws-terraform)]
+
+
+Deployment CLI:
+```
+ aws cloudformation deploy --template-file cfn-miniwdl.yaml --stack-name MiniWDL --capabilities CAPABILITY_NAMED_IAM --parameter-overrides  Owner=somebody@pheno.ai
+ aws cloudformation describe-stacks --stack-name MiniWDL
+```
+
+
+---
 # miniwdl AWS plugin
 
 **Extends [miniwdl](https://github.com/chanzuckerberg/miniwdl) to run workflows on [AWS Batch](https://aws.amazon.com/batch/) and [EFS](https://aws.amazon.com/efs/)**
