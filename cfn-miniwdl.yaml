@@ -12,12 +12,12 @@ Parameters:
   Environment:
     Description: Environment tag applied to all resources, and used in some resource names
     Type: String
-    Default: phenowdl
+    Default: miniwdl
 
   S3UploadBucket:
     Description: S3 bucket name for automatic upload of workflow outputs with `miniwdl-aws-submit --s3upload`
     Type: String
-    Default: phenowdl-bucket
+    Default:  miniwdl-bucket
     AllowedPattern: "((?=^.{3,63}$)(?!^(\\d+\\.)+\\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])$)|(^.{0}$))"
     ConstraintDescription: "Must respect AWS naming conventions"
 
@@ -34,12 +34,12 @@ Parameters:
   BatchSpotBidPercentage:
     Type: Number
     Description: The maximum percentage that an EC2 Spot Instance price can be when compared with the On-Demand price for that instance type before instances are launched.
-    Default: 100
+    Default: 75
 
 Resources:
 #######################
 # Networking
-# borrowing from https://github.com/awslabs/genomics-secondary-analysis-using-aws-step-functions-and-aws-batch
+# borrowed from https://github.com/awslabs/genomics-secondary-analysis-using-aws-step-functions-and-aws-batch
 #######################
   VPC:
     Type: AWS::EC2::VPC
@@ -73,13 +73,13 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-# For simplicity, one public subnet per availability zone. Private subnet(s) with NAT could work.
+# For simplicity, one public subnet per availability zone. 
   SubnetPublic0:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 3, 13]]
-      #MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
           - 0
@@ -96,8 +96,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 3, 13]]
-      #MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
           - 1
@@ -114,8 +114,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: !Select [ 2, !Cidr [ !GetAtt VPC.CidrBlock, 3, 13]]
-      #MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt VPC.CidrBlock, 3,12]]
+      MapPublicIpOnLaunch: true
       AvailabilityZone:
         Fn::Select:
           - 2
@@ -163,27 +163,29 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref SubnetPublic2
 
-  # Use a VPC Gateway Endpoint for S3 so that requests for data do not route over the public internet
-  S3VpcEndpoint:
-    Type: "AWS::EC2::VPCEndpoint"
-    Properties:
-      RouteTableIds:
-        - !Ref PublicRouteTable
-      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3 #required
-      VpcId: !Ref VPC #required
 
 # Umbrella security group for Batch compute environments & EFS mount targets, allowing any traffic
-# within the VPC and outbound (but not inbound) Internet. The ingress could be locked down to only
+# within the VPC and outbound (but not inbound) Internet. 
+# ToDo: The ingress could be locked down to only
 # make the EFS mount targets (TCP 2049) reachable from the Batch compute environments.
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for AWS Batch Launched Instances.
+      GroupName: !Sub ${Environment}
       VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          CidrIp: !GetAtt VPC.CidrBlock
       SecurityGroupEgress:
         - Description: Allow all outbound traffic for updates.
           IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -193,21 +195,7 @@ Resources:
             reason: Allow all outbound traffic for updates.
           - id: W42
             reason: Allow self-ingress on all ports for inter-node communication
-  
-  # this ingress rule is needed if you have tightly coupled multi-node workloads
-  # or if you are using a parallel filesystem
-  SecurityGroupSelfIngress:
-    Type: "AWS::EC2::SecurityGroupIngress"
-    Properties:
-      Description: Allow instances in the same security group to communicate
-      IpProtocol: "-1" #required
-      GroupId: !Ref SecurityGroup
-      SourceSecurityGroupId: !Ref SecurityGroup
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W42
-            reason: Allow self-ingress on all ports for inter-node communication
+
 #######################
 # EFS
 # borrowed from https://github.com/aws-samples/aws-genomics-workflows
@@ -289,7 +277,7 @@ Resources:
 # For Batch Fargate tasks running miniwdl itself
 # This role needs to be set with the Batch job definition, not as part of the compute environment;
 # miniwdl-aws-submit detects it from the WorkflowEngineRoleArn tag on the workflow job queue, set
-# above.
+# below.
   IAMRoleWorkflow:
     Type: "AWS::IAM::Role"
     Properties:
@@ -541,9 +529,11 @@ Resources:
       Tags: 
         Environment: !Sub ${Environment}
         Owner: !Sub ${Owner} 
+        # those tags below are used by miniwdl_aws_submit and other utily scripts
         WorkflowEngineRoleArn: !GetAtt IAMRoleWorkflow.Arn
         DefaultTaskQueue: !Sub ${Environment}-task
         DefaultFsap: !Ref AccessPoint
+        DefaultFs: !Ref SharedDataFileSystem
 
 #######################
 # Outputs

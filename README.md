@@ -4,12 +4,22 @@
 Deployment scropt for **miniwdl-aws cloud**, re[placement Terraform-based script [**miniwdl-aws-terraform**](https://github.com/miniwdl-ext/miniwdl-aws-terraform)]
 
 
-Deployment CLI:
+Deployment CLI (replace
+  - somebody@someemail.com with your username/email for identification of allocated resources
+  - miniwdl-bucket with desired name for S3 buckets for outputs. miniwdl-bucket is default
+):
 ```
- aws cloudformation deploy --template-file cfn-miniwdl.yaml --stack-name MiniWDL --capabilities CAPABILITY_NAMED_IAM --parameter-overrides  Owner=somebody@pheno.ai
- aws cloudformation describe-stacks --stack-name MiniWDL
+aws s3 mb s3://miniwdl-bucket
+aws cloudformation deploy --template-file cfn-miniwdl.yaml \
+    --stack-name MiniWDL --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  S3UploadBucket=miniwdl-bucket Owner=somebody@someemail.com
+aws cloudformation describe-stacks --stack-name MiniWDL
 ```
 
+to test your setup, run
+```
+miniwdl-aws-submit --self-test --follow --workflow-queue miniwdl-workflow 
+```
 
 ---
 # miniwdl AWS plugin
