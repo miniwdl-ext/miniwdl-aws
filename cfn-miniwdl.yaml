@@ -31,6 +31,11 @@ Parameters:
     Type: Number
     Default: 16
 
+  BatchSpotBidPercentage:
+    Type: Number
+    Description: The maximum percentage that an EC2 Spot Instance price can be when compared with the On-Demand price for that instance type before instances are launched.
+    Default: 100
+
 Resources:
 #######################
 # Networking
@@ -242,6 +247,16 @@ Resources:
       SecurityGroups: 
       - !Ref SecurityGroup
 
+  AccessPoint:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        FileSystemId: !Ref SharedDataFileSystem
+        PosixUser:
+          Uid: 0
+          Gid: 0
+        RootDirectory:
+          Path: /
+        
 #######################
 # IAM roles
 #######################
@@ -383,16 +398,172 @@ Resources:
       AWSServiceName: spotfleet.amazonaws.com
       Description: Default EC2 Spot Fleet Service Linked Role
 
+#######################
+# Batch
+#######################
+  IAMRoleTaskProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${Environment}-task
+      Path: "/"
+      Roles:
+        - Ref: IAMRoleTask
 
+  LaunchTemplateTask:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${Environment}-task
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Name: !Sub ${Environment}-task
+        UserData:
+          Fn::Base64: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+            --==MYBOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            # To run on first boot of an EC2 instance with NVMe instance storage volumes:
+            # 1) Assembles them into a RAID0 array, formats with XFS, and mounts to /mnt/scratch
+            # 2) Replaces /var/lib/docker with a symlink to /mnt/scratch/docker so that docker images and
+            #    container file systems use this high-performance scratch space. (restarts docker)
+            # The configuration persists through reboots (but not instance stop).
+            # logs go to /var/log/cloud-init-output.log
+            # refs:
+            # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ssd-instance-store.html
+            # https://github.com/kislyuk/aegea/blob/master/aegea/rootfs.skel/usr/bin/aegea-format-ephemeral-storage
+
+            set -euxo pipefail
+            shopt -s nullglob
+
+
+            devices=(/dev/xvd[b-m] /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_AWS?????????????????)
+            num_devices="${#devices[@]}"
+            if (( num_devices > 0 )) && ! grep /dev/md0 <(df); then
+                mdadm --create /dev/md0 --force --auto=yes --level=0 --chunk=256 --raid-devices=${num_devices} ${devices[@]}
+                mkfs.xfs -f /dev/md0
+                mkdir -p /mnt/scratch
+                mount -o defaults,noatime,largeio,logbsize=256k -t xfs /dev/md0 /mnt/scratch
+                echo UUID=$(blkid -s UUID -o value /dev/md0) /mnt/scratch xfs defaults,noatime,largeio,logbsize=256k 0 2 >> /etc/fstab
+                update-initramfs -u
+            fi
+            mkdir -p /mnt/scratch/tmp
+
+
+            systemctl stop docker || true
+            if [ -d /var/lib/docker ] && [ ! -L /var/lib/docker ]; then
+                mv /var/lib/docker /mnt/scratch
+            fi
+            mkdir -p /mnt/scratch/docker
+            ln -s /mnt/scratch/docker /var/lib/docker
+            systemctl restart docker || true
+            --==MYBOUNDARY==--
+
+  ComputeEnvironmentTask:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Sub ${Environment}-task
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: SPOT
+        InstanceTypes: 
+          - r5d
+          - m5d
+          - c5d
+        AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+        # Set the Spot price to 75% of on-demand price
+        # This is the maximum price for spot instances that Batch will launch.
+        # Lowering this puts a limit on the spot capacity that Batch has available.
+        # Spot instances are terminated when on-demand capacity is needed, regardless of the price set.
+        BidPercentage: !Ref BatchSpotBidPercentage 
+        MinvCpus: 0
+        MaxvCpus: !Sub ${MaxVCPUTask} 
+        Subnets:
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        SpotIamFleetRole: !GetAtt IAMRoleSpot.Arn
+        InstanceRole: !GetAtt IAMRoleTaskProfile.Arn  
+        LaunchTemplate:
+          LaunchTemplateId: !Ref LaunchTemplateTask     
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  ComputeEnvironmentWorkflow:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Sub ${Environment}-workflow
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: FARGATE
+        MaxvCpus: !Sub ${MaxVCPUWorkflow} 
+        Subnets:
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueTask:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-task
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentTask
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueWorkflow:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-workflow
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentWorkflow
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+        WorkflowEngineRoleArn: !GetAtt IAMRoleWorkflow.Arn
+        DefaultTaskQueue: !Sub ${Environment}-task
+        DefaultFsap: !Ref AccessPoint
+
+#######################
+# Outputs
+#######################
 Outputs:
   VpcId:
     Value: !Ref VPC
+    Description: Virtual Private CLoud (VPC)  ID
   PublicSubNetIds:
     Value: !Sub ${SubnetPublic0},${SubnetPublic1},${SubnetPublic0}
+    Description: Public subnet for each availability zone
   InternetGatewayId:
     Value: !Ref InternetGateway
+    Description: Internet Gateway ID
   SecurityGroupId:
-    Value: !Sub ${SecurityGroup}
+    Value: !Ref SecurityGroup
+    Description: Security group for compute resources and EFS
   EfsId:
     Value: !Ref SharedDataFileSystem
-    Description: EFS ID
+    Description: EFS file system ID
+  FsapId:
+    Value: !Ref AccessPoint
+    Description: EFS access point ID
