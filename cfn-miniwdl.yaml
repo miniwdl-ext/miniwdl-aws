@@ -539,6 +539,9 @@ Resources:
 # Outputs
 #######################
 Outputs:
+  WorkflowQueue: 
+    Value: !Sub ${Environment}-workflow
+    Description: Name of Workflow Queue 
   VpcId:
     Value: !Ref VPC
     Description: Virtual Private CLoud (VPC)  ID
