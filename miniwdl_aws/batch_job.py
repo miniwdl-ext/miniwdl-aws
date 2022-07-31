@@ -65,9 +65,9 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 not cls._fs_id or cls._fs_id == studio_efs_id
             ), "Configured EFS ([aws] fs / MINIWDL__AWS__FS, [aws] fsap / MINIWDL__AWS__FSAP) isn't associated with current SageMaker Studio domain EFS"
             cls._fs_id = studio_efs_id
-            assert cls._fs_mount.rstrip("/") == studio_efs_mount.rstrip("/") or (
-                cls._fs_mount.startswith(studio_efs_mount).rstrip("/") + "/"
-            ), (
+            assert (
+                cls._fs_mount.rstrip("/") == studio_efs_mount.rstrip("/")
+            ) or cls._fs_mount.startswith(studio_efs_mount.rstrip("/") + "/"), (
                 "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to "
                 + studio_efs_mount.rstrip("/")
             )
