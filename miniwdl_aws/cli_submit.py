@@ -16,6 +16,10 @@ from collections import defaultdict
 import boto3
 from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_from_access_point
 
+# Repository for miniwdl-aws docker
+#DEFAULT_IMAGE_PREFIX = "ghcr.io/miniwdl-ext/miniwdl-aws"   # for original miniwdl-ext/miniwdl-aws repository
+DEFAULT_IMAGE_PREFIX = "ghcr.io/staskh/miniwdl-aws"   # for specific fork
+
 
 def miniwdl_submit_awsbatch(argv):
     # Configure from arguments/environment/tags
@@ -273,7 +277,7 @@ def detect_env_args(args):
         import importlib_metadata
 
         try:
-            args.image = "ghcr.io/miniwdl-ext/miniwdl-aws:v" + importlib_metadata.version(
+            args.image = DEFAULT_IMAGE_PREFIX + ":v"  + importlib_metadata.version(
                 "miniwdl-aws"
             )
         except importlib_metadata.PackageNotFoundError:
