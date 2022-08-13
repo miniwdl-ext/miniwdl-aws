@@ -21,6 +21,7 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 DEFAULT_IMAGE_PREFIX = "ghcr.io/staskh/miniwdl-aws"  # for specific fork
 DEFAULT_WORKFLOW_QUEUE = "miniwdl-workflow"
 
+
 def miniwdl_submit_awsbatch(argv):
     # Configure from arguments/environment/tags
     args, unused_args = parse_args(argv)
