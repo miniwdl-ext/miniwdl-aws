@@ -28,88 +28,23 @@ from ._util import (
 )
 
 
-class BatchJob(WDL.runtime.task_container.TaskContainer):
+class BatchJobBase(WDL.runtime.task_container.TaskContainer):
+    """
+    Abstract base class implementing the AWS Batch backend for miniwdl TaskContainer. Concrete
+    subclasses add configuration specific to the the shared filesystem in use (EFS or FSxL).
+    """
+
     @classmethod
-    def global_init(cls, cfg, logger):
+    def _global_init_base(cls, cfg, logger):
         cls._region_name = detect_aws_region(cfg)
         assert (
             cls._region_name
         ), "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION"
 
-        # EFS configuration based on:
-        # - [aws] fsap / MINIWDL__AWS__FSAP
-        # - [aws] fs / MINIWDL__AWS__FS
-        # - SageMaker Studio metadata, if applicable
-        cls._fs_id = None
-        cls._fsap_id = None
-        cls._fs_mount = cfg.get("file_io", "root")
-        assert (
-            len(cls._fs_mount) > 1
-        ), "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to EFS mount point"
-        if cfg.has_option("aws", "fs"):
-            cls._fs_id = cfg.get("aws", "fs")
-        if cfg.has_option("aws", "fsap"):
-            cls._fsap_id = cfg.get("aws", "fsap")
-            if not cls._fs_id:
-                cls._fs_id = efs_id_from_access_point(cls._region_name, cls._fsap_id)
-        cls._studio_efs_uid = None
-        sagemaker_studio_efs = detect_sagemaker_studio_efs(logger, region_name=cls._region_name)
-        if sagemaker_studio_efs:
-            (
-                studio_efs_id,
-                studio_efs_uid,
-                studio_efs_home,
-                studio_efs_mount,
-            ) = sagemaker_studio_efs
-            assert (
-                not cls._fs_id or cls._fs_id == studio_efs_id
-            ), "Configured EFS ([aws] fs / MINIWDL__AWS__FS, [aws] fsap / MINIWDL__AWS__FSAP) isn't associated with current SageMaker Studio domain EFS"
-            cls._fs_id = studio_efs_id
-            assert (
-                cls._fs_mount.rstrip("/") == studio_efs_mount.rstrip("/")
-            ) or cls._fs_mount.startswith(studio_efs_mount.rstrip("/") + "/"), (
-                "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to "
-                + studio_efs_mount.rstrip("/")
-            )
-            cls._studio_efs_uid = studio_efs_uid
-            if not cls._fsap_id:
-                cls._fsap_id = detect_studio_fsap(
-                    logger,
-                    studio_efs_id,
-                    studio_efs_uid,
-                    studio_efs_home,
-                    region_name=cls._region_name,
-                )
-                assert (
-                    cls._fsap_id
-                ), "Unable to detect suitable EFS Access Point for use with SageMaker Studio; set [aws] fsap / MINIWDL__AWS__FSAP"
-            # TODO: else sanity-check that FSAP's root directory equals studio_efs_home
-        assert (
-            cls._fs_id
-        ), "Missing EFS configuration ([aws] fs / MINIWDL__AWS__FS or [aws] fsap / MINIWDL__AWS__FSAP)"
-        if not cls._fsap_id:
-            logger.warning(
-                "AWS BatchJob plugin recommends using EFS Access Point to simplify permissions between containers (configure [aws] fsap / MINIWDL__AWS__FSAP to fsap-xxxx)"
-            )
-        logger.debug(
-            _(
-                "AWS BatchJob EFS configuration",
-                fs_id=cls._fs_id,
-                fsap_id=cls._fsap_id,
-                mount=cls._fs_mount,
-            )
-        )
-
         # set AWS Batch job queue
+        cls._job_queue = None
         if cfg.has_option("aws", "task_queue"):
             cls._job_queue = cfg.get("aws", "task_queue")
-        elif sagemaker_studio_efs:
-            cls._job_queue = detect_gwfcore_batch_queue(
-                logger, sagemaker_studio_efs[0], region_name=cls._region_name
-            )
-        assert (
-            cls._job_queue
-        ), "Missing AWS Batch job queue configuration ([aws] task_queue / MINIWDL__AWS__TASK_QUEUE)"
 
         # TODO: query Batch compute environment for resource limits
         cls._resource_limits = {"cpu": 9999, "mem_bytes": 999999999999999}
@@ -117,14 +52,6 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         cls._last_submit_time = [0.0]
         cls._init_time = time.time()
         cls._describer = BatchJobDescriber()
-        logger.info(
-            _(
-                "initialized AWS BatchJob plugin",
-                region_name=cls._region_name,
-                job_queue=cls._job_queue,
-                resource_limits=cls._resource_limits,
-            )
-        )
 
     @classmethod
     def detect_resource_limits(cls, cfg, logger):
@@ -134,10 +61,10 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         super().__init__(cfg, run_id, host_dir)
         self._logStreamName = None
         self._inputs_copied = False
-        # We'll direct Batch to mount EFS inside the task container at the same location we have
-        # it mounted ourselves, namely /mnt/efs. Therefore container_dir will be the same as
-        # host_dir (unlike the default Swarm backend, which mounts it at a different virtualized
-        # location)
+        # We expect the Batch job containers to have the shared filesystem mounted at the same
+        # location we, the workflow job, have it mounted ourselves. Therefore container_dir will be
+        # the same as host_dir (unlike the default Swarm backend, which mounts it at a different
+        # virtualized location)
         self.container_dir = self.host_dir
 
     def copy_input_files(self, logger):
@@ -189,6 +116,8 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 config=botocore.config.Config(retries=boto3_retries),
             )
             with ExitStack() as cleanup:
+                # prepare the task working directory
+                self._prepare_dir(logger, cleanup, command)
                 # submit Batch job (with request throttling)
                 job_id = None
                 submit_period = self.cfg.get_float("aws", "submit_period", 1.0)
@@ -200,7 +129,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                             time.time() - self._last_submit_time[0]
                             >= submit_period * self._submit_period_multiplier()
                         ):
-                            job_id = self._submit_batch_job(logger, cleanup, aws_batch, command)
+                            job_id = self._submit_batch_job(logger, cleanup, aws_batch)
                             self._last_submit_time[0] = time.time()
                             break
                     time.sleep(submit_period / 4)
@@ -211,7 +140,32 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             logger.error(wrapper)
             raise wrapper
 
-    def _submit_batch_job(self, logger, cleanup, aws_batch, command):
+    def _prepare_dir(self, logger, cleanup, command):
+        # Prepare control files. We do NOT use super().touch_mount_point(...) because it fails if
+        # the desired mount point already exists; which it may in our case after a retry (see
+        # self.host_work_dir() override above.)
+        with open(os.path.join(self.host_dir, "command"), "w") as outfile:
+            outfile.write(command)
+        with open(self.host_stdout_txt(), "w"):
+            pass
+        with open(self.host_stderr_txt(), "w"):
+            pass
+
+        if not self._inputs_copied:
+            # Prepare symlinks to the input Files & Directories
+            container_prefix = os.path.join(self.container_dir, "work/_miniwdl_inputs/")
+            link_dirs_made = set()
+            for host_fn, container_fn in self.input_path_map.items():
+                assert container_fn.startswith(container_prefix) and len(container_fn) > len(
+                    container_prefix
+                )
+                link_dn = os.path.dirname(container_fn)
+                if link_dn not in link_dirs_made:
+                    os.makedirs(link_dn)
+                    link_dirs_made.add(link_dn)
+                symlink_force(host_fn, container_fn)
+
+    def _submit_batch_job(self, logger, cleanup, aws_batch):
         """
         Register & submit AWS batch job, leaving a cleanup callback to deregister the transient
         job definition.
@@ -226,7 +180,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         # concurrent RegisterJobDefinition requests
         job_name = randomize_job_name(job_name)
 
-        container_properties = self._prepare_container_properties(logger, command)
+        container_properties = self._prepare_container_properties(logger)
         job_def = aws_batch.register_job_definition(
             jobDefinitionName=job_name,
             type="container",
@@ -266,9 +220,8 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         )
         return job["jobId"]
 
-    def _prepare_container_properties(self, logger, command):
+    def _prepare_container_properties(self, logger):
         image_tag = self.runtime_values.get("docker", "ubuntu:20.04")
-        volumes, mount_points = self._prepare_mounts(logger, command)
         vcpu = self.runtime_values.get("cpu", 1)
         memory_mbytes = max(
             math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576), 1024
@@ -293,8 +246,6 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
 
         container_properties = {
             "image": image_tag,
-            "volumes": volumes,
-            "mountPoints": mount_points,
             "command": ["/bin/bash", "-ec", "\n".join(commands)],
             "environment": [
                 {"name": ev_name, "value": ev_value}
@@ -305,11 +256,7 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
         }
 
         if self.cfg["task_runtime"].get_bool("as_user"):
-            user = (
-                f"{self._studio_efs_uid}:{self._studio_efs_uid}"
-                if self._studio_efs_uid is not None
-                else f"{os.geteuid()}:{os.getegid()}"
-            )
+            user = f"{os.geteuid()}:{os.getegid()}"
             if user.startswith("0:"):
                 logger.warning(
                     "container command will run explicitly as root, since you are root and set --as-me"
@@ -317,57 +264,6 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
             container_properties["user"] = user
 
         return container_properties
-
-    def _prepare_mounts(self, logger, command):
-        """
-        Prepare the "volumes" and "mountPoints" for the Batch job definition, assembling the
-        in-container filesystem with the shared working directory, read-only input files, and
-        command/stdout/stderr files.
-        """
-
-        # Prepare control files. We do NOT use super().touch_mount_point(...) because it fails if
-        # the desired mount point already exists; which it may in our case after a retry (see
-        # self.host_work_dir() override above.)
-        with open(os.path.join(self.host_dir, "command"), "w") as outfile:
-            outfile.write(command)
-        with open(self.host_stdout_txt(), "w"):
-            pass
-        with open(self.host_stderr_txt(), "w"):
-            pass
-
-        # EFS mount point
-        volumes = [
-            {
-                "name": "efs",
-                "efsVolumeConfiguration": {
-                    "fileSystemId": self._fs_id,
-                    "transitEncryption": "ENABLED",
-                },
-            }
-        ]
-        if self._fsap_id:
-            volumes[0]["efsVolumeConfiguration"]["authorizationConfig"] = {
-                "accessPointId": self._fsap_id
-            }
-        mount_points = [{"containerPath": self._fs_mount, "sourceVolume": "efs"}]
-
-        if self._inputs_copied:
-            return volumes, mount_points
-
-        # Prepare symlinks to the input Files & Directories
-        container_prefix = os.path.join(self.container_dir, "work/_miniwdl_inputs/")
-        link_dirs_made = set()
-        for host_fn, container_fn in self.input_path_map.items():
-            assert container_fn.startswith(container_prefix) and len(container_fn) > len(
-                container_prefix
-            )
-            link_dn = os.path.dirname(container_fn)
-            if link_dn not in link_dirs_made:
-                os.makedirs(link_dn)
-                link_dirs_made.add(link_dn)
-            symlink_force(host_fn, container_fn)
-
-        return volumes, mount_points
 
     def _cleanup_job_definition(self, logger, cleanup, aws_batch, job_def_handle):
         def deregister(logger, aws_batch, job_def_handle):
@@ -473,6 +369,124 @@ class BatchJob(WDL.runtime.task_container.TaskContainer):
                 c = self.cfg.get_float("aws", "submit_period_c", 0.0)
                 return max(1.0, c - t / b)
         return 1.0
+
+
+class BatchJob(BatchJobBase):
+    """
+    EFS-based implementation, including the case of SageMaker Studio's built-in EFS
+    """
+    @classmethod
+    def global_init(cls, cfg, logger):
+        cls._global_init_base(cfg, logger)
+
+        # EFS configuration based on:
+        # - [aws] fsap / MINIWDL__AWS__FSAP
+        # - [aws] fs / MINIWDL__AWS__FS
+        # - SageMaker Studio metadata, if applicable
+        cls._fs_id = None
+        cls._fsap_id = None
+        cls._fs_mount = cfg.get("file_io", "root")
+        assert (
+            len(cls._fs_mount) > 1
+        ), "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to EFS mount point"
+        if cfg.has_option("aws", "fs"):
+            cls._fs_id = cfg.get("aws", "fs")
+        if cfg.has_option("aws", "fsap"):
+            cls._fsap_id = cfg.get("aws", "fsap")
+            if not cls._fs_id:
+                cls._fs_id = efs_id_from_access_point(cls._region_name, cls._fsap_id)
+        cls._studio_efs_uid = None
+        sagemaker_studio_efs = detect_sagemaker_studio_efs(logger, region_name=cls._region_name)
+        if sagemaker_studio_efs:
+            (
+                studio_efs_id,
+                studio_efs_uid,
+                studio_efs_home,
+                studio_efs_mount,
+            ) = sagemaker_studio_efs
+            assert (
+                not cls._fs_id or cls._fs_id == studio_efs_id
+            ), "Configured EFS ([aws] fs / MINIWDL__AWS__FS, [aws] fsap / MINIWDL__AWS__FSAP) isn't associated with current SageMaker Studio domain EFS"
+            cls._fs_id = studio_efs_id
+            assert (
+                cls._fs_mount.rstrip("/") == studio_efs_mount.rstrip("/")
+            ) or cls._fs_mount.startswith(studio_efs_mount.rstrip("/") + "/"), (
+                "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to "
+                + studio_efs_mount.rstrip("/")
+            )
+            cls._studio_efs_uid = studio_efs_uid
+            if not cls._fsap_id:
+                cls._fsap_id = detect_studio_fsap(
+                    logger,
+                    studio_efs_id,
+                    studio_efs_uid,
+                    studio_efs_home,
+                    region_name=cls._region_name,
+                )
+                assert (
+                    cls._fsap_id
+                ), "Unable to detect suitable EFS Access Point for use with SageMaker Studio; set [aws] fsap / MINIWDL__AWS__FSAP"
+            # TODO: else sanity-check that FSAP's root directory equals studio_efs_home
+        assert (
+            cls._fs_id
+        ), "Missing EFS configuration ([aws] fs / MINIWDL__AWS__FS or [aws] fsap / MINIWDL__AWS__FSAP)"
+        if not cls._fsap_id:
+            logger.warning(
+                "AWS BatchJob plugin recommends using EFS Access Point to simplify permissions between containers (configure [aws] fsap / MINIWDL__AWS__FSAP to fsap-xxxx)"
+            )
+        logger.debug(
+            _(
+                "AWS BatchJob EFS configuration",
+                fs_id=cls._fs_id,
+                fsap_id=cls._fsap_id,
+                mount=cls._fs_mount,
+            )
+        )
+
+        # if no task queue in config file, try detecting miniwdl-aws-studio
+        if not cls._job_queue and sagemaker_studio_efs:
+            cls._job_queue = detect_gwfcore_batch_queue(
+                logger, sagemaker_studio_efs[0], region_name=cls._region_name
+            )
+        assert (
+            cls._job_queue
+        ), "Missing AWS Batch job queue configuration ([aws] task_queue / MINIWDL__AWS__TASK_QUEUE)"
+
+        logger.info(
+            _(
+                "initialized AWS BatchJob plugin",
+                region_name=cls._region_name,
+                job_queue=cls._job_queue,
+                resource_limits=cls._resource_limits,
+            )
+        )
+
+    def _prepare_container_properties(self, logger):
+        container_properties = super()._prepare_container_properties(logger)
+
+        # add EFS volume & mount point
+        volumes = [
+            {
+                "name": "efs",
+                "efsVolumeConfiguration": {
+                    "fileSystemId": self._fs_id,
+                    "transitEncryption": "ENABLED",
+                },
+            }
+        ]
+        if self._fsap_id:
+            volumes[0]["efsVolumeConfiguration"]["authorizationConfig"] = {
+                "accessPointId": self._fsap_id
+            }
+        mount_points = [{"containerPath": self._fs_mount, "sourceVolume": "efs"}]
+        container_properties["volumes"] = volumes
+        container_properties["mountPoints"] = mount_points
+
+        # set Studio UID if appropriate
+        if self.cfg["task_runtime"].get_bool("as_user") and self._studio_efs_uid:
+            container_properties["user"] = f"{self._studio_efs_uid}:{self._studio_efs_uid}"
+
+        return container_properties
 
 
 class BatchJobDescriber:
