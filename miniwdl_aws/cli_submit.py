@@ -19,7 +19,7 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 # Repository for miniwdl-aws docker
 # DEFAULT_IMAGE_PREFIX = "ghcr.io/miniwdl-ext/miniwdl-aws"   # for original miniwdl-ext/miniwdl-aws repository
 DEFAULT_IMAGE_PREFIX = "ghcr.io/staskh/miniwdl-aws"  # for specific fork
-
+DEFAULT_WORKFLOW_QUEUE = "miniwdl-workflow"
 
 def miniwdl_submit_awsbatch(argv):
     # Configure from arguments/environment/tags
@@ -255,7 +255,7 @@ def detect_env_args(args):
     args.workflow_queue = (
         args.workflow_queue
         if args.workflow_queue
-        else os.environ.get("MINIWDL__AWS__WORKFLOW_QUEUE", None)
+        else os.environ.get("MINIWDL__AWS__WORKFLOW_QUEUE", DEFAULT_WORKFLOW_QUEUE)
     )
     if not args.workflow_queue:
         print(
