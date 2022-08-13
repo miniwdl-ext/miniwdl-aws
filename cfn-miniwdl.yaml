@@ -316,12 +316,14 @@ Resources:
             Effect: Allow
             Resource:
               - !Sub arn:aws:s3:::${S3UploadBucket}
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}
           - Action:
               - s3:GetObject
               - s3:PutObject
             Effect: Allow
             Resource:
               - !Sub arn:aws:s3:::${S3UploadBucket}/*
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}/*
       Roles: 
         - !Ref IAMRoleWorkflow
       PolicyName: !Sub "${IAMRoleWorkflow}-s3upload"
@@ -380,7 +382,7 @@ Resources:
     Properties:
       AWSServiceName: spot.amazonaws.com
       Description: Default EC2 Spot Service Linked Role
-  SpotFleeSLR:
+  SpotFleetSLR:
     Type: 'AWS::IAM::ServiceLinkedRole'
     Properties:
       AWSServiceName: spotfleet.amazonaws.com
@@ -462,6 +464,10 @@ Resources:
           - r5d
           - m5d
           - c5d
+          - p4d
+          - p3
+          - p2
+          - g4dn
         AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
         # Set the Spot price to 75% of on-demand price
         # This is the maximum price for spot instances that Batch will launch.
