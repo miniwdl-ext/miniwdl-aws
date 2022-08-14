@@ -540,6 +540,7 @@ Resources:
         DefaultTaskQueue: !Sub ${Environment}-task
         DefaultFsap: !Ref AccessPoint
         DefaultFs: !Ref SharedDataFileSystem
+        S3UploadBucket: !Sub ${S3UploadBucket}
 
 #######################
 # Outputs
