@@ -23,7 +23,7 @@ jobs:
 
         REPO="ghcr.io/staskh/miniwdl-aws"
         #TAG="$(git describe --tags --always --dirty)"
-        TAG="$(cat RELEASE-VERSION)"
+        TAG="v$(cat RELEASE-VERSION)"
 
         docker pull public.ecr.aws/amazonlinux/amazonlinux:2
         docker build --no-cache -t "${REPO}:${TAG}" .
