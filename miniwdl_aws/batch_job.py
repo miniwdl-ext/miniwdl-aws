@@ -379,7 +379,9 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
 class BatchJob(BatchJobBase):
     """
-    EFS-based implementation, including the case of SageMaker Studio's built-in EFS
+    EFS-based implementation, including the case of SageMaker Studio's built-in EFS. Assumes we're
+    running on an EC2 instance or Fargate container mounting an EFS Access Point at [file_io] root,
+    and configures each Batch job with the same mount.
     """
 
     @classmethod
@@ -495,8 +497,10 @@ class BatchJob(BatchJobBase):
 
 class BatchJobFSxL(BatchJobBase):
     """
-    FSxL-based implementation -- assumes all Batch jobs (both task and workflow) have FSxL mounted
-    at [file_io] root, typically /mnt/fsx
+    FSxL-based implementation: assumes we're running on an EC2 instance mounting FSxL at [file_io]
+    root, typically /mnt/fsx, and that Batch worker instances will automatically mount it there
+    too. This can't be requested through the Batch API, but instead must be automated in the
+    compute environment configuration (e.g. cloud-init user data script).
     """
 
     @classmethod
