@@ -1,8 +1,6 @@
-# Fork improvements
+# MiniWDL AWS Batch and GPU support
 
-## CloudFormation template for cloud setup
-Deployment scropt for **miniwdl-aws cloud**, re[placement Terraform-based script [**miniwdl-aws-terraform**](https://github.com/miniwdl-ext/miniwdl-aws-terraform)]
-
+## Infrastructure deployment
 
 Deployment CLI (replace
   - somebody@someemail.com with your username/email for identification of allocated resources
@@ -16,10 +14,37 @@ aws cloudformation deploy --template-file cfn-miniwdl.yaml \
 aws cloudformation describe-stacks --stack-name MiniWDL
 ```
 
+## Install latest version
+```
+pip install git+https://github.com/staskh/miniwdl-aws.git
+```
+
+## Test deployment
+Replace --s3upload value with one selected in infrastructure deployment.
+
 to test your setup, run
 ```
 miniwdl-aws-submit --self-test --follow --workflow-queue miniwdl-workflow 
 ```
+
+the same, but explicit test can be perfomed with 
+```
+miniwdl-aws-submit --verbose --no-cache --follow --s3upload s3://miniwdl-bucket/self_test https://raw.githubusercontent.com/staskh/miniwdl-aws/main/test_workflow/self_test/test.wdl who=https://raw.githubusercontent.com/chanzuckerberg/miniwdl/main/tests/alyssa_ben.txt 
+```
+
+to test GPU-based workflow, run
+```
+miniwdl-aws-submit --verbose --no-cache --follow --s3upload s3://miniwdl-bucket/gpu_test  https://raw.githubusercontent.com/staskh/miniwdl-aws/main/test_workflow/gpu_test/gpu_test.wdl
+```
+
+
+# Fork improvements
+
+## CloudFormation template for cloud setup
+Deployment script for **miniwdl-aws cloud**, replacement Terraform-based script [**miniwdl-aws-terraform**](https://github.com/miniwdl-ext/miniwdl-aws-terraform)]
+
+## Support for GPU-based tasks
+See WDL example at https://github.com/staskh/miniwdl-aws/tree/main/test_workflow/gpu_test 
 
 ---
 # miniwdl AWS plugin
