@@ -36,6 +36,11 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
     @classmethod
     def _global_init_base(cls, cfg, logger):
+        cls._submit_lock = threading.Lock()
+        cls._last_submit_time = [0.0]
+        cls._init_time = time.time()
+        cls._describer = BatchJobDescriber()
+
         cls._region_name = detect_aws_region(cfg)
         assert (
             cls._region_name
@@ -48,10 +53,11 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
         # TODO: query Batch compute environment for resource limits
         cls._resource_limits = {"cpu": 9999, "mem_bytes": 999999999999999}
-        cls._submit_lock = threading.Lock()
-        cls._last_submit_time = [0.0]
-        cls._init_time = time.time()
-        cls._describer = BatchJobDescriber()
+
+        cls._fs_mount = cfg.get("file_io", "root")
+        assert (
+            len(cls._fs_mount) > 1
+        ), "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to EFS mount point"
 
     @classmethod
     def detect_resource_limits(cls, cfg, logger):
@@ -375,6 +381,7 @@ class BatchJob(BatchJobBase):
     """
     EFS-based implementation, including the case of SageMaker Studio's built-in EFS
     """
+
     @classmethod
     def global_init(cls, cfg, logger):
         cls._global_init_base(cfg, logger)
@@ -385,10 +392,6 @@ class BatchJob(BatchJobBase):
         # - SageMaker Studio metadata, if applicable
         cls._fs_id = None
         cls._fsap_id = None
-        cls._fs_mount = cfg.get("file_io", "root")
-        assert (
-            len(cls._fs_mount) > 1
-        ), "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to EFS mount point"
         if cfg.has_option("aws", "fs"):
             cls._fs_id = cfg.get("aws", "fs")
         if cfg.has_option("aws", "fsap"):
@@ -478,13 +481,58 @@ class BatchJob(BatchJobBase):
             volumes[0]["efsVolumeConfiguration"]["authorizationConfig"] = {
                 "accessPointId": self._fsap_id
             }
-        mount_points = [{"containerPath": self._fs_mount, "sourceVolume": "efs"}]
         container_properties["volumes"] = volumes
-        container_properties["mountPoints"] = mount_points
+        container_properties["mountPoints"] = [
+            {"containerPath": self._fs_mount, "sourceVolume": "efs"}
+        ]
 
         # set Studio UID if appropriate
         if self.cfg["task_runtime"].get_bool("as_user") and self._studio_efs_uid:
             container_properties["user"] = f"{self._studio_efs_uid}:{self._studio_efs_uid}"
+
+        return container_properties
+
+
+class BatchJobFSxL(BatchJobBase):
+    """
+    FSxL-based implementation -- assumes all Batch jobs (both task and workflow) have FSxL mounted
+    at [file_io] root, typically /mnt/fsx
+    """
+
+    @classmethod
+    def global_init(cls, cfg, logger):
+        cls._global_init_base(cfg, logger)
+
+        root = cfg.get("file_io", "root")
+        assert (
+            root.startswith("/") and root != "/"
+        ), "misconfiguration: set [file_io] root to FSxL mount point"
+
+        assert (
+            cls._job_queue
+        ), "Missing AWS Batch job queue configuration ([aws] task_queue / MINIWDL__AWS__TASK_QUEUE)"
+
+        logger.info(
+            _(
+                "initialized AWS BatchJobFSxL plugin",
+                region_name=cls._region_name,
+                job_queue=cls._job_queue,
+                resource_limits=cls._resource_limits,
+            )
+        )
+
+    def _prepare_container_properties(self, logger):
+        container_properties = super()._prepare_container_properties(logger)
+
+        # add volume & mount point for the root directory (assumed to be an FSxL mount)
+        root = self.cfg.get("file_io", "root")
+        container_properties["volumes"] = [
+            {
+                "name": "fsx",
+                "host": {"sourcePath": root},
+            }
+        ]
+        container_properties["mountPoints"] = [{"containerPath": root, "sourceVolume": "fsx"}]
 
         return container_properties
 

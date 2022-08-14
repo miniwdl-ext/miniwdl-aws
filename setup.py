@@ -17,7 +17,10 @@ setup(
     install_requires=["miniwdl>=1.6.0", "boto3>=1.17", "requests"],
     reentry_register=True,
     entry_points={
-        "miniwdl.plugin.container_backend": ["aws_batch_job = miniwdl_aws:BatchJob"],
+        "miniwdl.plugin.container_backend": [
+            "aws_batch_job = miniwdl_aws:BatchJob",
+            "aws_batch_job_fsx = miniwdl_aws:BatchJobFSxL",
+        ],
         "console_scripts": [
             "miniwdl-run-s3upload = miniwdl_aws:miniwdl_run_s3upload",
             "miniwdl-aws-submit = miniwdl_aws.__main__:main",
