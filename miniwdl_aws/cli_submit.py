@@ -124,7 +124,18 @@ def parse_args(argv):
         " or detect from DefaultFsap tag on workflow job queue]",
     )
     group.add_argument(
-        "--mount", default=None, help="EFS mount point in all containers [/mnt/efs or /mnt/fsx]"
+        "--fsx",
+        "--FSx",
+        "--fsxl",
+        "--FSxL",
+        action="store_true",
+        dest="fsx",
+        help="instead of EFS, expect compute environments to mount FSxL automatically [env MINIWDL__AWS__FSX]",
+    )
+    group.add_argument(
+        "--mount",
+        default=None,
+        help="shared filesystem mount point in all containers [/mnt/efs or /mnt/fsx]",
     )
     group = parser.add_argument_group("Workflow job provisioning")
     group.add_argument(
@@ -155,16 +166,16 @@ def parse_args(argv):
     group.add_argument(
         "--dir",
         default=None,
-        help="Run directory prefix [/mnt/efs/miniwdl_run or /mnt/fsx/miniwdl_run]",
+        help="run directory prefix [/mnt/efs/miniwdl_run or /mnt/fsx/miniwdl_run]",
     )
     group.add_argument(
         "--s3upload",
-        help="s3://bucket/folder/ at which to upload run outputs (otherwise left on EFS)",
+        help="s3://bucket/folder/ at which to upload run outputs (otherwise left on shared filesystem)",
     )
     group.add_argument(
         "--delete-after",
         choices=("always", "success", "failure"),
-        help="with --s3upload, delete EFS run directory afterwards",
+        help="with --s3upload, delete run directory afterwards",
     )
     parser.add_argument(
         "--wait", "-w", action="store_true", help="wait for workflow job to complete"
@@ -176,15 +187,6 @@ def parse_args(argv):
         help="live-stream workflow log to standard error (implies --wait)",
     )
     parser.add_argument("--self-test", action="store_true", help="perform `miniwdl run_self_test`")
-    parser.add_argument(
-        "--fsx",
-        "--FSx",
-        "--fsxl",
-        "--FSxL",
-        action="store_true",
-        dest="fsx",
-        help="instead of EFS, expect compute environments to automatically mount FSxL",
-    )
 
     args, unused_args = parser.parse_known_args(argv[1:])
 
