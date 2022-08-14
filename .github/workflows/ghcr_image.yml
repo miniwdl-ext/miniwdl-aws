@@ -37,7 +37,7 @@ jobs:
 
         echo "FROM ${REPO}:${TAG}
         RUN sed -i s/aws_batch_job/aws_batch_job_fsx/ /etc/xdg/miniwdl.cfg \
-         && sed -i s/\\/mnt\\/efs/\\/mnt\\/fsx/g /etc/xdg/miniwdl.cfg
+         && sed -i s/\\\\/mnt\\\\/efs/\\\\/mnt\\\\/fsx/g /etc/xdg/miniwdl.cfg
         " | docker build -t "${REPO}:${TAG}-fsx" -
         docker push "${REPO}:${TAG}-fsx"
     - name: display
