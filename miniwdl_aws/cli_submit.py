@@ -47,7 +47,7 @@ def miniwdl_submit_awsbatch(argv):
     # TODO: accept local WDL source code; check, zip, & attach it
 
     # Prepare workflow job: command, environment, and container properties
-    job_name, miniwdl_run_cmd = form_miniwdl_run_cmd(args, unused_args)
+    job_name, miniwdl_run_cmd, wdl_bundle = form_miniwdl_run_cmd(args, unused_args, verbose)
     job_name = randomize_job_name(job_name)
 
     environment = [
@@ -56,6 +56,8 @@ def miniwdl_submit_awsbatch(argv):
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
         {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
     ]
+    if wdl_bundle:
+        environment.append({"name": "WDL_BUNDLE", "value": wdl_bundle})
     extra_env = set()
     if not args.no_env:
         # pass through environment variables starting with MINIWDL__ (except those specific to
@@ -343,10 +345,11 @@ def detect_tags_args(aws_batch, args):
                     sys.exit(1)
 
 
-def form_miniwdl_run_cmd(args, unused_args):
+def form_miniwdl_run_cmd(args, unused_args, verbose=False):
     """
     Formulate the `miniwdl run` command line to be invoked in the workflow job container
     """
+    wdl_bundle = None
     if args.self_test:
         self_test_dir = os.path.join(
             args.mount, "miniwdl_run_self_test", datetime.today().strftime("%Y%m%d_%H%M%S")
@@ -354,10 +357,16 @@ def form_miniwdl_run_cmd(args, unused_args):
         miniwdl_run_cmd = ["miniwdl", "run_self_test", "--dir", self_test_dir]
         job_name = args.name if args.name else "miniwdl_run_self_test"
     else:
-        wdl_filename = next((arg for arg in unused_args if not arg.startswith("-")), None)
-        if not wdl_filename:
+        wdl_filename_pos = next(
+            (i for i, arg in enumerate(unused_args) if not arg.startswith("-")), -1
+        )
+        if wdl_filename_pos < 0:
             print("Command line appears to be missing WDL filename", file=sys.stderr)
             sys.exit(1)
+        wdl_filename = unused_args[wdl_filename_pos]
+        wdl_bundle = bundle_wdl(wdl_filename, verbose)
+        if wdl_bundle:
+            unused_args[wdl_filename_pos] = "--WDL_BUNDLE--"
         job_name = args.name
         if not job_name:
             job_name = os.path.basename(wdl_filename).lstrip(".")
@@ -373,7 +382,36 @@ def form_miniwdl_run_cmd(args, unused_args):
         miniwdl_run_cmd.extend(["--dir", args.dir])
         miniwdl_run_cmd.extend(["--s3upload", args.s3upload] if args.s3upload else [])
         miniwdl_run_cmd.extend(["--delete-after", args.delete_after] if args.delete_after else [])
-    return (job_name, miniwdl_run_cmd)
+    return (job_name, miniwdl_run_cmd, wdl_bundle)
+
+
+def bundle_wdl(wdl_filename, verbose=False):
+    if not (wdl_filename.endswith(".wdl") and os.path.isfile(wdl_filename)):
+        if verbose:
+            print("Not a local WDL file; assuming accessible to workflow job: " + wdl_filename)
+        return None
+
+    import subprocess
+    import tempfile
+    import base64
+    import lzma
+
+    wdl_filename = os.path.abspath(wdl_filename)
+    try:
+        subprocess.check_call(["miniwdl", "check", wdl_filename])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tar_fn = os.path.join(tmpdir, os.path.basename(wdl_filename)) + ".tar"
+            subprocess.check_call(["miniwdl", "zip", "-o", tar_fn, wdl_filename])
+            with open(tar_fn, "b") as tar_file:
+                tar_bytes = tar_file.read()
+            assert len(tar_bytes)
+        bundle_str = base64.b85encode(
+            lzma.compress(tar_bytes, format=lzma.FORMAT_ALONE, preset=(9 | lzma.PRESET_EXTREME))
+        ).decode("ascii")
+        print(f"Bundled {wdl_filename} to {len(bundle_str)} bytes", file=sys.stderr)
+        return bundle_str
+    except subprocess.CalledProcessError as exn:
+        sys.exit(exn.returncode)
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):
