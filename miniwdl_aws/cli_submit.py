@@ -121,19 +121,19 @@ def miniwdl_submit_awsbatch(argv):
     workflow_job_def_handle = (
         f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
     )
+    environment2 = []
+    if wdl_zip:
+        # if the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in
+        # the workflow job environment, to be picked up by miniwdl-run-s3upload.
+        # we send this in the SubmitJob containerOverrides rather than RegisterJobDefinition to
+        # minimize the chance of exceeding the payload size limit for either request.
+        environment2.append({"name": "WDL_ZIP", "value": wdl_zip})
     try:
-        environment_overrides = []
-        if wdl_zip:
-            # if the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in
-            # the environment of the workflow job, to be picked up by miniwdl-run-s3upload.
-            # we send this in the SubmitJob containerOverrides rather than RegisterJobDefinition to
-            # minimize the chance of exceeding the payload size limit for either request.
-            environment_overrides.append({"name": "WDL_ZIP", "value": wdl_zip})
         workflow_job_id = aws_batch.submit_job(
             jobName=job_name,
             jobQueue=args.workflow_queue,
             jobDefinition=workflow_job_def_handle,
-            containerOverrides={"environment": environment_overrides},
+            containerOverrides={"environment": environment2},
         )["jobId"]
         if verbose:
             print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
