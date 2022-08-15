@@ -250,7 +250,7 @@ def extract_wdl_bundle():
     bundle_str = os.environ["WDL_BUNDLE"]
     tar_bytes = lzma.decompress(base64.b85decode(bundle_str), format=lzma.FORMAT_ALONE)
     tmpdir = tempfile.mkdtemp(prefix="wdl_bundle_")
-    with open(os.path.join(tmpdir, "bundle.tar"), "b") as tar_file:
+    with open(os.path.join(tmpdir, "bundle.tar"), "wb") as tar_file:
         tar_file.write(tar_bytes)
     subprocess.check_call(["tar", "xf", "bundle.tar"], cwd=tmpdir)
     os.remove(os.path.join(tmpdir, "bundle.tar"))

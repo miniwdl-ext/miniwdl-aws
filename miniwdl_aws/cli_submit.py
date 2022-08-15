@@ -402,7 +402,7 @@ def bundle_wdl(wdl_filename, verbose=False):
         with tempfile.TemporaryDirectory() as tmpdir:
             tar_fn = os.path.join(tmpdir, os.path.basename(wdl_filename)) + ".tar"
             subprocess.check_call(["miniwdl", "zip", "-o", tar_fn, wdl_filename])
-            with open(tar_fn, "b") as tar_file:
+            with open(tar_fn, "wb") as tar_file:
                 tar_bytes = tar_file.read()
             assert len(tar_bytes)
         bundle_str = base64.b85encode(
