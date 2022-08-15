@@ -253,7 +253,7 @@ def extract_wdl_bundle():
     with open(os.path.join(tmpdir, "bundle.tar"), "wb") as tar_file:
         tar_file.write(tar_bytes)
     subprocess.check_call(
-        ["/bin/tar", "xf", "bundle.tar", "--no-same-owner", "--no-same-permissions"], cwd=tmpdir
+        ["tar", "xf", "bundle.tar", "--no-same-owner", "--no-same-permissions"], cwd=tmpdir
     )
     os.remove(os.path.join(tmpdir, "bundle.tar"))
     return tmpdir
