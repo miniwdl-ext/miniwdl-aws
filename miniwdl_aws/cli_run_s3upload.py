@@ -86,9 +86,10 @@ def miniwdl_run_s3upload_inner():
                 )
             upload1(testfile, args.s3upload + ("/" if not args.s3upload.endswith("/") else ""))
 
-    bundle_arg = next((i for i, arg in enumerate(unused_args) if arg == "--WDL_BUNDLE--"), -1)
-    if bundle_arg >= 0:
-        unused_args[bundle_arg] = extract_wdl_bundle()
+    zip_arg = next((i for i, arg in enumerate(unused_args) if arg == "--WDL--ZIP--"), -1)
+    if zip_arg >= 0:
+        # get `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit
+        unused_args[zip_arg] = get_wdl_zip()
 
     cmd = ["miniwdl", "run"] + unused_args
     if "--error-json" not in unused_args:
@@ -243,17 +244,16 @@ def rebase_output_path(fn, run_dir, s3_upload_folder):
     return fn
 
 
-def extract_wdl_bundle():
+def get_wdl_zip():
+    """
+    Load `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit, encoded in the
+    environment variable WDL_ZIP
+    """
     import base64
     import lzma
 
-    bundle_str = os.environ["WDL_BUNDLE"]
-    tar_bytes = lzma.decompress(base64.b85decode(bundle_str), format=lzma.FORMAT_ALONE)
-    tmpdir = tempfile.mkdtemp(prefix="wdl_bundle_")
-    with open(os.path.join(tmpdir, "bundle.tar"), "wb") as tar_file:
-        tar_file.write(tar_bytes)
-    subprocess.check_call(
-        ["tar", "xf", "bundle.tar", "--no-same-owner", "--no-same-permissions"], cwd=tmpdir
-    )
-    os.remove(os.path.join(tmpdir, "bundle.tar"))
-    return tmpdir
+    zip_bytes = lzma.decompress(base64.b85decode(os.environ["WDL_ZIP"]), format=lzma.FORMAT_ALONE)
+    fd, fn = tempfile.mkstemp(suffix=".zip", prefix="wdl_")
+    os.write(fd, zip_bytes)
+    os.close(fd)
+    return fn

@@ -6,8 +6,7 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2
 # rpm dependencies
 RUN yum check-update; yum install -y \
         python3-pip \
-        awscli \
-        tar
+        awscli
 
 # miniwdl-aws (and PyPI dependencies listed in setup.py)
 COPY ./ /tmp/miniwdl-aws/
