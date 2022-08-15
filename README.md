@@ -52,7 +52,7 @@ The command line resembles `miniwdl run`'s with extra AWS-related arguments:
 
 `miniwdl-aws-submit` detects other infrastructure details (task queue, EFS access point, IAM role) based on the workflow queue; see `miniwdl-aws-submit --help` for additional options to override those defaults.
 
-If the specified WDL source code is an existing local .wdl or .zip file, `miniwdl-aws-submit` automatically ships it in the workflow job definition as the WDL to execute. Given a .wdl file, it runs `miniwdl zip` to detect & include any imported WDL files. Use `miniwdl zip --input file.json` directly to also include a JSON file with default workflow inputs.
+If the specified WDL source code is an existing local .wdl or .zip file, `miniwdl-aws-submit` automatically ships it in the workflow job definition as the WDL to execute. Given a .wdl file, it runs `miniwdl zip` to detect & include any imported WDL files. Use `miniwdl zip --input file.json` directly to also include a JSON file with default workflow inputs (an alternative to writing them out on the command line).
 
 Arguments not consumed by `miniwdl-aws-submit` are *passed through* to `miniwdl run` inside the workflow job; as are environment variables whose names begin with `MINIWDL__`, allowing override of any [miniwdl configuration option](https://miniwdl.readthedocs.io/en/latest/runner_reference.html#configuration) (disable wih `--no-env`). See [miniwdl_aws.cfg](miniwdl_aws.cfg) for various options preconfigured in the workflow job container.
 
