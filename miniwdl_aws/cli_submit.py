@@ -56,10 +56,6 @@ def miniwdl_submit_awsbatch(argv):
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
         {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
     ]
-    if wdl_zip:
-        # if the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in the
-        # environment of the workflow job, to be picked up by miniwdl-run-s3upload
-        environment.append({"name": "WDL_ZIP", "value": wdl_zip})
     extra_env = set()
     if not args.no_env:
         # pass through environment variables starting with MINIWDL__ (except those specific to
@@ -126,10 +122,18 @@ def miniwdl_submit_awsbatch(argv):
         f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
     )
     try:
+        environment_overrides = []
+        if wdl_zip:
+            # if the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in
+            # the environment of the workflow job, to be picked up by miniwdl-run-s3upload.
+            # we send this in the SubmitJob containerOverrides rather than RegisterJobDefinition to
+            # minimize the chance of exceeding the payload size limit for either request.
+            environment_overrides.append({"name": "WDL_ZIP", "value": wdl_zip})
         workflow_job_id = aws_batch.submit_job(
             jobName=job_name,
             jobQueue=args.workflow_queue,
             jobDefinition=workflow_job_def_handle,
+            containerOverrides={"environment": environment_overrides},
         )["jobId"]
         if verbose:
             print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
@@ -402,7 +406,9 @@ def zip_wdl(wdl_filename, verbose=False):
         wdl_filename.endswith(".wdl") or wdl_filename.endswith(".zip")
     ):
         if verbose:
-            print("Not a local WDL file; assuming accessible to workflow job: " + wdl_filename)
+            print(
+                f"WDL: {wdl_filename} (not a local WDL file; assuming accessible inside workflow job)"
+            )
         return None
 
     # load zip bytes
@@ -425,18 +431,19 @@ def zip_wdl(wdl_filename, verbose=False):
             zip_bytes = zip_file.read()
     assert zip_bytes, "empty WDL zip"
 
-    # aggressively compress, to maximize the chance of fitting within the 32KB limit on Batch job
-    # definition JSON
+    # aggressively compress, to maximize chance of fitting within the 30KiB limit on Batch
+    # SubmitJob request: https://docs.aws.amazon.com/batch/latest/userguide/service_limits.html
     import base64
     import lzma
 
     zip_str = base64.b85encode(
         lzma.compress(zip_bytes, format=lzma.FORMAT_ALONE, preset=(9 | lzma.PRESET_EXTREME))
     ).decode("ascii")
-    print(
-        f"Encoded local {wdl_filename} to {len(zip_str)} bytes for submission with workflow job",
-        file=sys.stderr,
-    )
+    if verbose:
+        print(
+            f"WDL/ZIP: {wdl_filename} (encoded as {len(zip_str)} bytes to submit with workflow job)",
+            file=sys.stderr,
+        )
     return zip_str
 
 
