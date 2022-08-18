@@ -30,17 +30,18 @@ def miniwdl_aws_status(argv=sys.argv):
         )
         sys.exit(1)
     aws_batch = boto3.client("batch", region_name=aws_region_name)
+    aws_logs = boto3.client("logs", region_name=aws_region_name)
     detect_tags_args(aws_batch, args)
 
     if args.command=='all':
         # print top level status of all submited tasks
-        status_queue(aws_batch,args)
+        queue_status(aws_batch,args)
     elif args.command=='job':
         # status   for a specific workflow job 
-        pass
+        job_status(aws_batch,aws_logs,args)
     elif args.command=='log':
         # log for a specific workflow job
-        pass
+        job_log(aws_batch,aws_logs,args)
 
     return 0
 
@@ -69,17 +70,23 @@ def parse_args(argv):
         help="flag to generate debug information",
     )
 
+    parser.add_argument(
+        "--exclude-debug-log",
+        action="store_true",
+        help="flag to exclude DEBUG  messages from LOG printout",
+    )
+
     group = parser.add_argument_group("Jobs identification")
     group.add_argument(
         "--job-id",
         default=None,
-        help="jobId to identify specific job",
+        help="jobId to identify specific job. Use tha latest submited job if ommited",
     )
-    group.add_argument(
-        "--job-name",
-        default=None,
-        help="jobName to identify specific job",
-    )
+    # group.add_argument(
+    #     "--job-name",
+    #     default=None,
+    #     help="jobName to identify specific job",
+    # )
 
     group = parser.add_argument_group("AWS Batch")
     group.add_argument(
@@ -175,7 +182,7 @@ def print_jobs(jobs):
         print(f"{job['jobId']}\t{job['status']}\t{start_time_str}\t{stop_time_str}"
               f"\t{job['jobName']}")
 
-def status_queue(aws_batch,args):
+def queue_status(aws_batch,args):
     # get list of all runnig jobs
     # aws batch list-jobs --job-queue miniwdl-workflow --job-status RUNNING
     waiting_status = ['SUBMITTED','PENDING','RUNNABLE','STARTING']
@@ -202,6 +209,119 @@ def status_queue(aws_batch,args):
         active_jobs = sorted(active_jobs, reverse=True, key=lambda d: d['createdAt']) 
         print("ACTIVE jobs:")
         print_jobs(active_jobs)
+
+def get_latest_job(aws_batch,args):
+    '''return ID of teh latest submited job'''
+    all_status = ['SUBMITTED','PENDING','RUNNABLE','STARTING','RUNNING','SUCCEEDED','FAILED']
+    all_jobs=[]
+    for status in all_status:
+        jobs = get_jobs(aws_batch,args.workflow_queue,status)
+        all_jobs += jobs
+
+    if len(all_jobs)==0 :
+        return None
+    
+    all_jobs = sorted(all_jobs, reverse=True, key=lambda d: d['createdAt']) 
+    return all_jobs[0]['jobId']
+
+
+def job_status(aws_batch,aws_logs,args):
+
+    if not args.job_id: 
+        print( "[WARNING] No --job-id parameter specified, use the latest submited job",file=sys.stderr)
+        args.job_id = get_latest_job(aws_batch,args)
+
+    # get job  description
+    job_description = aws_batch.describe_jobs(jobs=[args.job_id])
+    if not "jobs" in job_description:
+        print( f"can't find job  description for {args.job_id}",file=sys.stderr)
+        sys.exit(1) 
+
+    job = job_description['jobs'][0]
+    #print job  description
+    print(f"jobId       : {job['jobId']}")
+    print(f"jobName     : {job['jobName']}")
+    print(f"status      : {job['status']}")
+    print(f"statusReason: {job['statusReason']}")
+    if 'createdAt' in job:
+        print(f"createdAt   : {datetime.utcfromtimestamp(job['createdAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+    if 'startedAt' in job:
+        print(f"statrteAt   : {datetime.utcfromtimestamp(job['startedAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+    if 'startedAt' in job:
+        print(f"stoppedAt   : {datetime.utcfromtimestamp(job['stoppedAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+
+    container = job['container']
+    logStreamName = container['logStreamName']
+    print(f"logStream   : {logStreamName}")
+    command = container['command']
+    cli = ' '.join(command)
+    print(f"command     : {cli}")    
+    #extract  sub-tasks
+
+    #print list of subtasks
+
+def get_log(aws_logs,logStreamName):
+    # try:
+    #     job_paginator = aws_logs.get_paginator('get_log_events')
+    #     job_page_iterator = job_paginator.paginate(        
+    #             logGroupName='/aws/batch/job',logStreamName=logStreamName,startFromHead=True
+    #             )
+    # except ClientError as exe:
+    #     print('Unable to get log  events: %s', str(exe),file=sys.stderr) 
+    #     sys.exit(1)   
+
+    # result = list()
+    # for page in job_page_iterator:
+    #     result += page['events']  
+
+    have_more = True
+    nextToken = None
+
+    results = []
+
+    while have_more:
+        if not nextToken:
+            logs = aws_logs.get_log_events(logGroupName='/aws/batch/job',
+                    logStreamName=logStreamName,
+                    startFromHead=True)
+        else:
+            logs = aws_logs.get_log_events(logGroupName='/aws/batch/job',
+                    logStreamName=logStreamName,
+                    startFromHead=True,
+                    nextToken = nextToken)
+
+        results += logs['events']
+
+        if ('nextForwardToken' in logs) and  (nextToken != logs['nextForwardToken']):
+            nextToken = logs['nextForwardToken']
+        else:
+            have_more = False
+
+    return results
+
+def job_log(aws_batch,aws_logs,args):
+    ''' print log associated with this task'''
+    if not args.job_id: 
+        print( "[WARNING] No --job-id parameter specified, use the latest submited job",file=sys.stderr)
+        args.job_id = get_latest_job(aws_batch,args)
+
+    # get job  description
+    job_description = aws_batch.describe_jobs(jobs=[args.job_id])
+    if not "jobs" in job_description:
+        print( f"can't find job  description for {args.job_id}",file=sys.stderr)
+        sys.exit(1) 
+    job = job_description['jobs'][0]
+    container = job['container']
+    logStreamName = container['logStreamName']
+
+    print(f"LOG FOR JOB {job['jobId']} ({job['jobName']}) ")
+    logs = get_log(aws_logs,logStreamName)
+    for item in logs:
+        message = item['message']
+        if args.exclude_debug_log and (' DEBUG ' in message[:80]):
+            continue
+        print(message)
+
 
 if __name__ == "__main__":
     sys.exit(miniwdl_aws_status())
