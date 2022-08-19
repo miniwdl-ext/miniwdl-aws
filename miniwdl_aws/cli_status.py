@@ -254,7 +254,7 @@ def job_status(aws_batch, aws_logs, args):
     print(f"jobId       : {job['jobId']}")
     print(f"jobName     : {job['jobName']}")
     print(f"status      : {job['status']}")
-    if  'statusReason' in job:
+    if "statusReason" in job:
         print(f"statusReason: {job['statusReason']}")
     if "createdAt" in job:
         print(
@@ -276,16 +276,16 @@ def job_status(aws_batch, aws_logs, args):
     print(f"command     : {cli}")
 
     if "logStreamName" not in container:
-        return # log not ready yet , we did  all we  can until now...
+        return  # log not ready yet , we did  all we  can until now...
     logStreamName = container["logStreamName"]
     print(f"logStream   : {logStreamName}")
-    
+
     # extract  sub-tasks IDs from logs
     task_id = []
     try:
         logs = get_log(aws_logs, logStreamName)
     except:
-        return # log not ready yet , we did  all we  can until now...
+        return  # log not ready yet , we did  all we  can until now...
 
     for item in logs:
         message = item["message"]
@@ -295,7 +295,7 @@ def job_status(aws_batch, aws_logs, args):
             task_id.append(jobId)
     # print list of subtask
     if len(task_id) > 0:
-        task_id = list(set(task_id)) # eliminate  dublicates
+        task_id = list(set(task_id))  # eliminate  dublicates
         print(f"Sub-tasks   : {len(task_id)}")
         task_description = aws_batch.describe_jobs(jobs=task_id)
         if "jobs" not in job_description:
