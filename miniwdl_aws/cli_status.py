@@ -186,7 +186,7 @@ def print_jobs(jobs):
             else "----"
         )
         print(
-            f"{job['jobId']}\t{job['status']}\t{start_time_str}\t{stop_time_str}"
+            f"{job['jobId']}\t{job['status']:<12}\t{start_time_str:<20}\t{stop_time_str:<20}"
             f"\t{job['jobName']}"
         )
 
@@ -254,7 +254,8 @@ def job_status(aws_batch, aws_logs, args):
     print(f"jobId       : {job['jobId']}")
     print(f"jobName     : {job['jobName']}")
     print(f"status      : {job['status']}")
-    print(f"statusReason: {job['statusReason']}")
+    if  'statusReason' in job:
+        print(f"statusReason: {job['statusReason']}")
     if "createdAt" in job:
         print(
             f"createdAt   : {datetime.utcfromtimestamp(job['createdAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}"
@@ -263,29 +264,38 @@ def job_status(aws_batch, aws_logs, args):
         print(
             f"statrteAt   : {datetime.utcfromtimestamp(job['startedAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}"
         )
-    if "startedAt" in job:
+    if "stoppedAt" in job:
         print(
             f"stoppedAt   : {datetime.utcfromtimestamp(job['stoppedAt']/1000).strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     container = job["container"]
-    logStreamName = container["logStreamName"]
-    print(f"logStream   : {logStreamName}")
+
     command = container["command"]
     cli = " ".join(command)
     print(f"command     : {cli}")
 
+    if "logStreamName" not in container:
+        return # log not ready yet , we did  all we  can until now...
+    logStreamName = container["logStreamName"]
+    print(f"logStream   : {logStreamName}")
+    
     # extract  sub-tasks IDs from logs
     task_id = []
-    logs = get_log(aws_logs, logStreamName)
+    try:
+        logs = get_log(aws_logs, logStreamName)
+    except:
+        return # log not ready yet , we did  all we  can until now...
+
     for item in logs:
         message = item["message"]
-        if "AWS Batch job submitted" in message:
+        if ("AWS Batch job submitted" in message) or ("AWS Batch job change" in message):
             substring_after = message.split("jobId:", 1)[1]
             jobId = substring_after.split('"', 2)[1]
             task_id.append(jobId)
     # print list of subtask
     if len(task_id) > 0:
+        task_id = list(set(task_id)) # eliminate  dublicates
         print(f"Sub-tasks   : {len(task_id)}")
         task_description = aws_batch.describe_jobs(jobs=task_id)
         if "jobs" not in job_description:
