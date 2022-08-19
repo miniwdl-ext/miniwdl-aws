@@ -164,7 +164,7 @@ def get_jobs(aws_batch, queue, status):
                 "jobId": item["jobId"],
                 "jobName": item["jobName"],
                 "status": item["status"],
-                "statusReason": item["statusReason"],
+                "statusReason": item["statusReason"] if "statusReason" in item else None,
                 "createdAt": item["createdAt"] if "createdAt" in item else None,
                 "stoppedAt": item["stoppedAt"] if "stoppedAt" in item else None,
             }

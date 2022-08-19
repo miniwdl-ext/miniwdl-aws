@@ -20,6 +20,7 @@ setup(
         "miniwdl.plugin.container_backend": ["aws_batch_job = miniwdl_aws:BatchJob"],
         "console_scripts": [
             "miniwdl-run-s3upload = miniwdl_aws:miniwdl_run_s3upload",
+            "miniwdl-aws-status = miniwdl_aws:miniwdl_aws_status",
             "miniwdl-aws-submit = miniwdl_aws.__main__:main",
         ],
     },
