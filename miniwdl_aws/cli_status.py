@@ -205,7 +205,7 @@ def queue_status(aws_batch, args):
         waiting_jobs += jobs
     # sort the  list in descdending order of creation date
     if len(waiting_jobs) > 0:
-        waiting_jobs = sorted(waiting_jobs, reverse=True, key=lambda d: d["startedAt"])
+        waiting_jobs = sorted(waiting_jobs, reverse=True, key=lambda d: d["createdAt"])
         print("WAITING jobs:")
         print_jobs(waiting_jobs)
 
