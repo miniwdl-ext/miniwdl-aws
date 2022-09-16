@@ -323,3 +323,54 @@ def test_download(aws_batch):
         ],
     )
     assert rslt["success"]
+
+
+def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
+    with open(tmp_path / "outer.wdl", "w") as outfile:
+        print(
+            """
+            version development
+            import "inner.wdl"
+
+            workflow outer {
+                input {
+                    String who
+                }
+                call inner.hello { input: who }
+                output {
+                    String message = hello.message
+                }
+            }
+            """,
+            file=outfile,
+        )
+    with open(tmp_path / "inner.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            task hello {
+                input {
+                    String who
+                }
+                command {
+                    echo 'Hello, ~{who}!'
+                }
+                output {
+                    String message = read_string(stdout())
+                }
+            }
+            """,
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "outer.wdl"),
+            "who=world",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+        upload=test_s3_folder + "test_shipping_local_wdl/",
+    )
+    assert rslt["outputs"]["outer.message"] == "Hello, world!"
