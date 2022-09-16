@@ -133,21 +133,25 @@ def miniwdl_run_s3upload_inner():
         if os.path.isfile(p):
             upload1(p, s3_upload_folder)
 
-    # upload error.json, and the stderr_file it points to, if any
+    # upload error.json, and the std{out,err}_file it points to, if any
     error_json_file = os.path.join(run_dir, "error.json")
     if os.path.isfile(error_json_file):
         upload1(error_json_file, s3_upload_folder)
+        reupload = False
         with open(error_json_file) as infile:
             error_json = json.load(infile)
-            stderr_file = error_json.get("cause", {}).get("stderr_file", None)
-            if stderr_file and os.path.isfile(stderr_file):
-                stderr_s3file = s3_upload_folder + "CommandFailed_stderr.txt"
-                upload1(stderr_file, stderr_s3file)
-                error_json["cause"]["stderr_s3file"] = stderr_s3file
-                with tempfile.NamedTemporaryFile() as tmp:
-                    tmp.write(json.dumps(error_json, indent=2).encode())
-                    tmp.flush()
-                    upload1(tmp.name, s3_upload_folder + "error.json")
+            for std_key in ("stderr", "stdout"):
+                std_file = error_json.get("cause", {}).get(std_key + "_file", None)
+                if std_file and os.path.isfile(std_file):
+                    std_s3file = f"{s3_upload_folder}CommandFailed_{std_key}.txt"
+                    upload1(std_file, std_s3file)
+                    error_json["cause"][std_key + "_s3file"] = std_s3file
+                    reupload = True
+        if reupload:
+            with tempfile.NamedTemporaryFile() as tmp:
+                tmp.write(json.dumps(error_json, indent=2).encode())
+                tmp.flush()
+                upload1(tmp.name, s3_upload_folder + "error.json")
 
     # upload output files, if any
     if os.path.isdir(os.path.join(run_dir, "out")):

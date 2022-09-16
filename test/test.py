@@ -178,6 +178,10 @@ def test_termination(aws_batch, test_s3_folder):
         "This is the end, my only friend"
         in get_s3uri(rslt["error"]["cause"]["stderr_s3file"]).decode()
     )
+    assert (
+        "I'll never look into your eyes again"
+        in get_s3uri(rslt["error"]["cause"]["stdout_s3file"]).decode()
+    )
     assert time.time() - t0 < 600
 
 
