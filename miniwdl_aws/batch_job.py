@@ -31,7 +31,7 @@ from ._util import (
 class BatchJobBase(WDL.runtime.task_container.TaskContainer):
     """
     Abstract base class implementing the AWS Batch backend for miniwdl TaskContainer. Concrete
-    subclasses add configuration specific to the the shared filesystem in use (EFS or FSxL).
+    subclasses add configuration specific to the the shared filesystem in use.
     """
 
     @classmethod
@@ -47,16 +47,14 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         ), "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION"
 
         # set AWS Batch job queue
-        cls._job_queue = None
-        if cfg.has_option("aws", "task_queue"):
-            cls._job_queue = cfg.get("aws", "task_queue")
+        cls._job_queue = cfg.get("aws", "task_queue", "")
 
         # TODO: query Batch compute environment for resource limits
         cls._resource_limits = {"cpu": 9999, "mem_bytes": 999999999999999}
 
         cls._fs_mount = cfg.get("file_io", "root")
         assert (
-            len(cls._fs_mount) > 1
+            cls._fs_mount.startswith("/") and cls._fs_mount != "/"
         ), "misconfiguration, set [file_io] root / MINIWDL__FILE_IO__ROOT to EFS mount point"
 
     @classmethod
@@ -259,6 +257,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
             ],
             "resourceRequirements": resource_requirements,
             "privileged": self.runtime_values.get("privileged", False),
+            "mountPoints": [{"containerPath": self._fs_mount, "sourceVolume": "file_io_root"}],
         }
 
         if self.cfg["task_runtime"].get_bool("as_user"):
@@ -439,14 +438,6 @@ class BatchJob(BatchJobBase):
             logger.warning(
                 "AWS BatchJob plugin recommends using EFS Access Point to simplify permissions between containers (configure [aws] fsap / MINIWDL__AWS__FSAP to fsap-xxxx)"
             )
-        logger.debug(
-            _(
-                "AWS BatchJob EFS configuration",
-                fs_id=cls._fs_id,
-                fsap_id=cls._fsap_id,
-                mount=cls._fs_mount,
-            )
-        )
 
         # if no task queue in config file, try detecting miniwdl-aws-studio
         if not cls._job_queue and sagemaker_studio_efs:
@@ -459,10 +450,13 @@ class BatchJob(BatchJobBase):
 
         logger.info(
             _(
-                "initialized AWS BatchJob plugin",
+                "initialized AWS BatchJob (EFS) plugin",
                 region_name=cls._region_name,
                 job_queue=cls._job_queue,
                 resource_limits=cls._resource_limits,
+                file_io_root=cls._fs_mount,
+                efs_id=cls._fs_id,
+                efsap_id=cls._fsap_id,
             )
         )
 
@@ -472,7 +466,7 @@ class BatchJob(BatchJobBase):
         # add EFS volume & mount point
         volumes = [
             {
-                "name": "efs",
+                "name": "file_io_root",
                 "efsVolumeConfiguration": {
                     "fileSystemId": self._fs_id,
                     "transitEncryption": "ENABLED",
@@ -484,9 +478,6 @@ class BatchJob(BatchJobBase):
                 "accessPointId": self._fsap_id
             }
         container_properties["volumes"] = volumes
-        container_properties["mountPoints"] = [
-            {"containerPath": self._fs_mount, "sourceVolume": "efs"}
-        ]
 
         # set Studio UID if appropriate
         if self.cfg["task_runtime"].get_bool("as_user") and self._studio_efs_uid:
@@ -495,22 +486,16 @@ class BatchJob(BatchJobBase):
         return container_properties
 
 
-class BatchJobFSxL(BatchJobBase):
+class BatchJobNoEFS(BatchJobBase):
     """
-    FSxL-based implementation: assumes we're running on an EC2 instance mounting FSxL at [file_io]
-    root, typically /mnt/fsx, and that Batch worker instances will automatically mount it there
-    too. This can't be requested through the Batch API, but instead must be automated in the
-    compute environment configuration (e.g. cloud-init user data script).
+    Implementation assuming the Batch compute environment is configured to mount the shared
+    filesystem without further specification by us; e.g. FSxL mounted by cloud-init user data
+    script.
     """
 
     @classmethod
     def global_init(cls, cfg, logger):
         cls._global_init_base(cfg, logger)
-
-        root = cfg.get("file_io", "root")
-        assert (
-            root.startswith("/") and root != "/"
-        ), "misconfiguration: set [file_io] root to FSxL mount point"
 
         assert (
             cls._job_queue
@@ -518,25 +503,23 @@ class BatchJobFSxL(BatchJobBase):
 
         logger.info(
             _(
-                "initialized AWS BatchJobFSxL plugin",
+                "initialized AWS BatchJob plugin",
                 region_name=cls._region_name,
                 job_queue=cls._job_queue,
                 resource_limits=cls._resource_limits,
+                file_io_root=cls._fs_mount,
             )
         )
 
     def _prepare_container_properties(self, logger):
         container_properties = super()._prepare_container_properties(logger)
 
-        # add volume & mount point for the root directory (assumed to be an FSxL mount)
-        root = self.cfg.get("file_io", "root")
         container_properties["volumes"] = [
             {
-                "name": "fsx",
-                "host": {"sourcePath": root},
+                "name": "file_io_root",
+                "host": {"sourcePath": self._fs_mount},
             }
         ]
-        container_properties["mountPoints"] = [{"containerPath": root, "sourceVolume": "fsx"}]
 
         return container_properties
 
