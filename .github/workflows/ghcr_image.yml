@@ -27,13 +27,6 @@ jobs:
         docker build --no-cache -t "${REPO}:${TAG}" .
         IMAGE_ID="$(docker inspect ${REPO}:${TAG} | jq -r .[0].Id)"
 
-        # also build no-EFS variant
-        echo "FROM ${REPO}:${TAG}
-        RUN sed -i s/aws_batch_job/aws_batch_job_no_efs/ /etc/xdg/miniwdl.cfg \
-         && sed -i s/\\\\/mnt\\\\/efs/\\\\/mnt\\\\/net/g /etc/xdg/miniwdl.cfg
-        " | docker build -t "${REPO}:${TAG}-no-efs" -
-        docker push "${REPO}:${TAG}-no-efs"
-
         docker push "${REPO}:${TAG}"
         REPO_DIGEST="$(docker inspect ${REPO}:${TAG} | jq -r '.[0].RepoDigests[0]')"
 

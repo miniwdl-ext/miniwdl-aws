@@ -253,9 +253,6 @@ def detect_env_args(args):
             )
             sys.exit(1)
 
-        if not args.efs:
-            # our GitHub build creates a "-no-efs" image variant with a modified configuration
-            args.image += "-no-efs"
     if args.delete_after and not args.s3upload:
         print("--delete-after requires --s3upload", file=sys.stderr)
         sys.exit(1)
@@ -422,6 +419,10 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
     if args.efs:
         environment.append({"name": "MINIWDL__AWS__FS", "value": fs_id})
         environment.append({"name": "MINIWDL__AWS__FSAP", "value": args.fsap})
+    else:
+        environment.append(
+            {"name": "MINIWDL__SCHEDULER__CONTAINER_BACKEND", "value": "aws_batch_job_no_efs"}
+        )
     extra_env = set()
     if not args.no_env:
         # pass through environment variables starting with MINIWDL__ (except those specific to
