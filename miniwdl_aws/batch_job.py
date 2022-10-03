@@ -35,7 +35,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
     """
 
     @classmethod
-    def _global_init_base(cls, cfg, logger):
+    def global_init(cls, cfg, logger):
         cls._submit_lock = threading.Lock()
         cls._last_submit_time = [0.0]
         cls._init_time = time.time()
@@ -385,7 +385,7 @@ class BatchJob(BatchJobBase):
 
     @classmethod
     def global_init(cls, cfg, logger):
-        cls._global_init_base(cfg, logger)
+        super().global_init(cfg, logger)
 
         # EFS configuration based on:
         # - [aws] fsap / MINIWDL__AWS__FSAP
@@ -495,7 +495,7 @@ class BatchJobNoEFS(BatchJobBase):
 
     @classmethod
     def global_init(cls, cfg, logger):
-        cls._global_init_base(cfg, logger)
+        super().global_init(cfg, logger)
 
         assert (
             cls._job_queue
