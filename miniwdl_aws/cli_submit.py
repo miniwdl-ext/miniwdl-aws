@@ -20,7 +20,9 @@ from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_fro
 def miniwdl_submit_awsbatch(argv):
     # Configure from arguments/environment/tags
     args, unused_args = parse_args(argv)
-    verbose = args.follow or "--verbose" in unused_args or "--debug" in unused_args
+    verbose = (
+        args.follow or args.self_test or "--verbose" in unused_args or "--debug" in unused_args
+    )
     detect_env_args(args)
     if verbose:
         print("Workflow job queue: " + args.workflow_queue, file=sys.stderr)
@@ -36,85 +38,31 @@ def miniwdl_submit_awsbatch(argv):
     detect_tags_args(aws_batch, args)
 
     if verbose:
-        print("Workflow IAM role ARN: " + args.workflow_role, file=sys.stderr)
         print("Task job queue: " + args.task_queue, file=sys.stderr)
-        print("EFS Access Point: " + args.fsap, file=sys.stderr)
+        if args.efs:
+            print("Workflow IAM role ARN: " + args.workflow_role, file=sys.stderr)
+            print("EFS Access Point: " + args.fsap, file=sys.stderr)
 
-    fs_id = efs_id_from_access_point(aws_region_name, args.fsap)
-    if verbose:
-        print("EFS: " + fs_id, file=sys.stderr)
+    fs_id = None
+    if args.efs:
+        fs_id = efs_id_from_access_point(aws_region_name, args.fsap)
+        if verbose:
+            print("EFS: " + fs_id, file=sys.stderr)
 
     # TODO: accept local WDL source code; check, zip, & attach it
 
     # Prepare workflow job: command, environment, and container properties
     job_name, miniwdl_run_cmd, wdl_zip = form_miniwdl_run_cmd(args, unused_args, verbose)
     job_name = randomize_job_name(job_name)
-
-    environment = [
-        {"name": "MINIWDL__AWS__FS", "value": fs_id},
-        {"name": "MINIWDL__AWS__FSAP", "value": args.fsap},
-        {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
-        {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
-    ]
-    extra_env = set()
-    if not args.no_env:
-        # pass through environment variables starting with MINIWDL__ (except those specific to
-        # workflow job launch, or passed through via command line)
-        for k in os.environ:
-            if k.startswith("MINIWDL__") and k not in (
-                "MINIWDL__AWS__FS",
-                "MINIWDL__AWS__FSAP",
-                "MINIWDL__AWS__TASK_QUEUE",
-                "MINIWDL__AWS__WORKFLOW_QUEUE",
-                "MINIWDL__AWS__WORKFLOW_ROLE",
-                "MINIWDL__AWS__WORKFLOW_IMAGE",
-                "MINIWDL__AWS__S3_UPLOAD_FOLDER",
-                "MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER",
-                "MINIWDL__FILE_IO__ROOT",
-            ):
-                environment.append({"name": k, "value": os.environ[k]})
-                extra_env.add(k)
-
     if verbose:
         print("Workflow job image: " + args.image, file=sys.stderr)
-        if extra_env:
-            print(
-                "Passing through environment variables (--no-env to disable): "
-                + " ".join(list(extra_env)),
-                file=sys.stderr,
-            )
         print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
-
-    workflow_container_props = {
-        "fargatePlatformConfiguration": {"platformVersion": "1.4.0"},
-        "executionRoleArn": args.workflow_role,
-        "jobRoleArn": args.workflow_role,
-        "resourceRequirements": [
-            {"type": "VCPU", "value": str(args.cpu)},
-            {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
-        ],
-        "volumes": [
-            {
-                "name": "efs",
-                "efsVolumeConfiguration": {
-                    "fileSystemId": fs_id,
-                    "transitEncryption": "ENABLED",
-                    "authorizationConfig": {"accessPointId": args.fsap},
-                },
-            }
-        ],
-        "mountPoints": [{"containerPath": args.mount, "sourceVolume": "efs"}],
-        "image": args.image,
-        "command": miniwdl_run_cmd,
-        "environment": environment,
-    }
-    if not args.no_public_ip:
-        workflow_container_props["networkConfiguration"] = {"assignPublicIp": "ENABLED"}
+    workflow_container_props = form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose)
 
     # Register & submit workflow job
     workflow_job_def = aws_batch.register_job_definition(
         jobDefinitionName=job_name,
-        platformCapabilities=["FARGATE"],
+        platformCapabilities=["FARGATE" if args.efs else "EC2"],
         type="container",
         containerProperties=workflow_container_props,
     )
@@ -184,7 +132,16 @@ def parse_args(argv):
         " or detect from DefaultFsap tag on workflow job queue]",
     )
     group.add_argument(
-        "--mount", default="/mnt/efs", help="EFS mount point in all containers [/mnt/efs]"
+        "--no-efs",
+        "--no-EFS",
+        action="store_false",
+        dest="efs",
+        help="instead of EFS, expect EC2 compute environments to automatically mount some other shared filesystem [env MINIWDL__AWS__FS=0]",
+    )
+    group.add_argument(
+        "--mount",
+        default=None,
+        help="shared filesystem mount point in all containers [/mnt/efs or /mnt/net]",
     )
     group = parser.add_argument_group("Workflow job provisioning")
     group.add_argument(
@@ -215,16 +172,16 @@ def parse_args(argv):
     group.add_argument(
         "--dir",
         default=None,
-        help="Run directory prefix [/mnt/efs/miniwdl_run]",
+        help="run directory prefix [{mount}/miniwdl_run or {mount}/miniwdl_run]",
     )
     group.add_argument(
         "--s3upload",
-        help="s3://bucket/folder/ at which to upload run outputs (otherwise left on EFS)",
+        help="s3://bucket/folder/ at which to upload run outputs (otherwise left on shared filesystem)",
     )
     group.add_argument(
         "--delete-after",
         choices=("always", "success", "failure"),
-        help="with --s3upload, delete EFS run directory afterwards",
+        help="with --s3upload, delete run directory afterwards",
     )
     parser.add_argument(
         "--wait", "-w", action="store_true", help="wait for workflow job to complete"
@@ -239,6 +196,10 @@ def parse_args(argv):
 
     args, unused_args = parser.parse_known_args(argv[1:])
 
+    if os.environ.get("MINIWDL__AWS__FS", "").strip().lower() in ("false", "f", "0", "no", "n"):
+        args.efs = False
+    if not args.mount:
+        args.mount = "/mnt/efs" if args.efs else "/mnt/net"
     if args.mount.endswith("/"):
         args.mount = args.mount[:-1]
     assert args.mount
@@ -278,6 +239,7 @@ def detect_env_args(args):
     )
     args.image = args.image if args.image else os.environ.get("MINIWDL__AWS__WORKFLOW_IMAGE", None)
     if not args.image:
+        # version-matched default image from our GitHub build
         import importlib_metadata
 
         try:
@@ -290,6 +252,7 @@ def detect_env_args(args):
                 file=sys.stderr,
             )
             sys.exit(1)
+
     if args.delete_after and not args.s3upload:
         print("--delete-after requires --s3upload", file=sys.stderr)
         sys.exit(1)
@@ -306,24 +269,13 @@ def detect_env_args(args):
 def detect_tags_args(aws_batch, args):
     """
     If not otherwise set by command line arguments or environment, inspect tags of the workflow job
-    queue to detect default EFS Access Point ID (fsap-xxx), task job queue, and/or workflow role
-    ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the respective tags.
+    queue to detect default task job queue and (if applicable) EFS Access Point ID and workflow
+    role ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the expected tags.
     """
-    if not (args.fsap or args.task_queue or args.workflow_role):
+    if not args.task_queue or (args.efs and not (args.fsap or args.workflow_role)):
         workflow_queue_tags = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
             "jobQueues"
         ][0]["tags"]
-        if not args.fsap:
-            try:
-                args.fsap = workflow_queue_tags["DefaultFsap"]
-                assert args.fsap.startswith("fsap-")
-            except:
-                print(
-                    "Unable to detect default EFS Access Point (fsap-xxxx) from DefaultFsap tag of workflow job queue."
-                    " Set --fsap or environment variable MINIWDL__AWS__FSAP.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:
@@ -333,7 +285,19 @@ def detect_tags_args(aws_batch, args):
                     file=sys.stderr,
                 )
                 sys.exit(1)
-        if not args.workflow_role:
+        if args.efs and not args.fsap:
+            try:
+                args.fsap = workflow_queue_tags["DefaultFsap"]
+                assert args.fsap.startswith("fsap-")
+            except:
+                if not args.fsap:
+                    print(
+                        "Unable to detect default EFS Access Point (fsap-xxxx) from DefaultFsap tag of workflow job queue."
+                        " Set --fsap or environment variable MINIWDL__AWS__FSAP.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+        if args.efs and not args.workflow_role:
             # Workflow role ARN is needed for Fargate Batch (unlike EC2 Batch, where a role is
             # associated with the EC2 instance profile in the compute environment).
             try:
@@ -445,6 +409,93 @@ def zip_wdl(wdl_filename, verbose=False):
             file=sys.stderr,
         )
     return zip_str
+
+
+def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
+    environment = [
+        {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
+        {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
+    ]
+    if args.efs:
+        environment.append({"name": "MINIWDL__AWS__FS", "value": fs_id})
+        environment.append({"name": "MINIWDL__AWS__FSAP", "value": args.fsap})
+    else:
+        environment.append(
+            {"name": "MINIWDL__SCHEDULER__CONTAINER_BACKEND", "value": "aws_batch_job_no_efs"}
+        )
+    extra_env = set()
+    if not args.no_env:
+        # pass through environment variables starting with MINIWDL__ (except those specific to
+        # workflow job launch, or passed through via command line)
+        for k in os.environ:
+            if k.startswith("MINIWDL__") and k not in (
+                "MINIWDL__AWS__FS",
+                "MINIWDL__AWS__FSAP",
+                "MINIWDL__AWS__TASK_QUEUE",
+                "MINIWDL__AWS__WORKFLOW_QUEUE",
+                "MINIWDL__AWS__WORKFLOW_ROLE",
+                "MINIWDL__AWS__WORKFLOW_IMAGE",
+                "MINIWDL__AWS__S3_UPLOAD_FOLDER",
+                "MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER",
+                "MINIWDL__FILE_IO__ROOT",
+            ):
+                environment.append({"name": k, "value": os.environ[k]})
+                extra_env.add(k)
+
+    if verbose and extra_env:
+        print(
+            "Passing through environment variables (--no-env to disable): "
+            + " ".join(list(extra_env)),
+            file=sys.stderr,
+        )
+
+    workflow_container_props = {
+        "resourceRequirements": [
+            {"type": "VCPU", "value": str(args.cpu)},
+            {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
+        ],
+        "image": args.image,
+        "command": miniwdl_run_cmd,
+        "environment": environment,
+    }
+    if args.efs:
+        # EFS: set EFS volume/mountPoint and Fargate execution role
+        assert args.workflow_role and fs_id and args.fsap
+        workflow_container_props.update(
+            {
+                "fargatePlatformConfiguration": {"platformVersion": "1.4.0"},
+                "executionRoleArn": args.workflow_role,
+                "jobRoleArn": args.workflow_role,
+                "volumes": [
+                    {
+                        "name": "efs",
+                        "efsVolumeConfiguration": {
+                            "fileSystemId": fs_id,
+                            "transitEncryption": "ENABLED",
+                            "authorizationConfig": {"accessPointId": args.fsap},
+                        },
+                    }
+                ],
+                "mountPoints": [{"containerPath": args.mount, "sourceVolume": "efs"}],
+            }
+        )
+        if not args.no_public_ip:
+            workflow_container_props["networkConfiguration"] = {"assignPublicIp": "ENABLED"}
+    else:
+        # non-EFS: set volume/mountPoint assuming compute environments mount automatically
+        workflow_container_props.update(
+            {
+                "volumes": [
+                    {
+                        "name": "file_io_root",
+                        "host": {"sourcePath": args.mount},
+                    }
+                ],
+                "mountPoints": [{"containerPath": args.mount, "sourceVolume": "file_io_root"}],
+            }
+        )
+
+    return workflow_container_props
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):

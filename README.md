@@ -95,6 +95,12 @@ Management tips:
 * Spread out separate workflow runs over time or across multiple EFS file systems.
 * Code WDL tasks to write any purely-temporary files into `$TMPDIR`, which may use local scratch space, instead of the EFS working directory.
 
+### FSx for Lustre and other shared filesystems
+
+If EFS performance remains insufficient, then you can configure your Batch compute environments to automatically mount some other shared filesystem upon instance startup. Then use `miniwdl-aws-submit --no-efs` to make it assume the filesystem will already be mounted at a certain location (default `--mount /mnt/net`) across all instances. In this case, the compute environment for workflow jobs is expected to use EC2 instead of Fargate resources (usually necessary for mounting).
+
+The miniwdl-aws-terraform repo [includes a variant](https://github.com/miniwdl-ext/miniwdl-aws-terraform/tree/main/fsx) setting this up with [FSx for Lustre](https://aws.amazon.com/fsx/lustre/). FSx offers higher throughput scalability, but has other downsides compared to EFS (higher upfront costs, manual capacity scaling, single-AZ deployment, fewer AWS service integrations).
+
 ## Logs & troubleshooting
 
 If the terminal log isn't available (through Studio or `miniwdl-submit-awsbatch --follow`) to trace a workflow failure, look for miniwdl's usual log files written in the run directory on EFS or copied to S3.
