@@ -49,39 +49,38 @@ def miniwdl_submit_awsbatch(argv):
         if verbose:
             print("EFS: " + fs_id, file=sys.stderr)
 
-    # TODO: accept local WDL source code; check, zip, & attach it
-
     # Prepare workflow job: command, environment, and container properties
     job_name, miniwdl_run_cmd, wdl_zip = form_miniwdl_run_cmd(args, unused_args, verbose)
     job_name = randomize_job_name(job_name)
     if verbose:
         print("Workflow job image: " + args.image, file=sys.stderr)
         print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
-    workflow_container_props = form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose)
+    workflow_container_props, workflow_container_overrides = form_workflow_container_props(
+        args, miniwdl_run_cmd, fs_id, wdl_zip, verbose
+    )
 
     # Register & submit workflow job
-    workflow_job_def = aws_batch.register_job_definition(
-        jobDefinitionName=job_name,
-        platformCapabilities=["FARGATE" if args.efs else "EC2"],
-        type="container",
-        containerProperties=workflow_container_props,
-    )
+    try:
+        workflow_job_def = aws_batch.register_job_definition(
+            jobDefinitionName=job_name,
+            platformCapabilities=["FARGATE" if args.efs else "EC2"],
+            type="container",
+            containerProperties=workflow_container_props,
+        )
+    except BaseException as exc:
+        if wdl_zip and "JobDefinition size must be less than" in str(exc):
+            print(_WDL_ZIP_SIZE_MSG, file=sys.stderr)
+            sys.exit(123)
+        raise
     workflow_job_def_handle = (
         f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
     )
-    environment2 = []
-    if wdl_zip:
-        # if the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in
-        # the workflow job environment, to be picked up by miniwdl-run-s3upload.
-        # we send this in the SubmitJob containerOverrides rather than RegisterJobDefinition to
-        # minimize the chance of exceeding the payload size limit for either request.
-        environment2.append({"name": "WDL_ZIP", "value": wdl_zip})
     try:
         workflow_job_id = aws_batch.submit_job(
             jobName=job_name,
             jobQueue=args.workflow_queue,
             jobDefinition=workflow_job_def_handle,
-            containerOverrides={"environment": environment2},
+            containerOverrides=workflow_container_overrides,
         )["jobId"]
         if verbose:
             print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
@@ -411,7 +410,7 @@ def zip_wdl(wdl_filename, verbose=False):
     return zip_str
 
 
-def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
+def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, verbose=False):
     environment = [
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
         {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
@@ -450,11 +449,21 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
         )
 
     workflow_container_props = {
+        "image": args.image,
         "resourceRequirements": [
             {"type": "VCPU", "value": str(args.cpu)},
             {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
         ],
-        "image": args.image,
+        "environment": [],
+    }
+    if wdl_zip:
+        # If the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in the
+        # workflow job environment, to be picked up by miniwdl-run-s3upload. And below we put a few
+        # things in ContainerOverrides instead of ContainerProperties to maximize the zip's chance
+        # to fit in RegisterJobDefinition, although (as of this writing) it seems to be limited by
+        # the 8KiB ContainerOverrides limit anyway.
+        workflow_container_props["environment"].append({"name": "WDL_ZIP", "value": wdl_zip})
+    workflow_container_overrides = {
         "command": miniwdl_run_cmd,
         "environment": environment,
     }
@@ -495,7 +504,7 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
             }
         )
 
-    return workflow_container_props
+    return (workflow_container_props, workflow_container_overrides)
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):
@@ -549,8 +558,17 @@ def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=Tru
                     file=sys.stderr,
                 )
             sys.stderr.flush()
-        print(job_desc["status"] + "\t" + workflow_job_id, file=sys.stderr)
-        assert isinstance(exit_code, int)
+        status = job_desc["status"]
+        reason = job_desc.get("statusReason", "")
+        if reason:
+            reason = (
+                f"\t{reason}" if reason and reason != "Essential container in task exited" else ""
+            )
+        print(status + "\t" + workflow_job_id + reason, file=sys.stderr)
+        if status == "FAILED" and "Container Overrides length must be at most" in reason:
+            print(_WDL_ZIP_SIZE_MSG, file=sys.stderr)
+            exit_code = 123
+        assert isinstance(exit_code, int) and (exit_code != 0 or status == "SUCCEEDED")
         return exit_code
     except KeyboardInterrupt:
         print(
@@ -602,3 +620,9 @@ class CloudWatchLogsFollower:
         if event_ids_per_timestamp:
             self._newest_timestamp = max(event_ids_per_timestamp.keys())
             self._newest_event_ids = event_ids_per_timestamp[self._newest_timestamp]
+
+
+_WDL_ZIP_SIZE_MSG = (
+    "\nExceeded AWS Batch request payload size limit; make the WDL source code and/or inputs"
+    " available by URL or remote filesystem path, to pass by reference."
+)

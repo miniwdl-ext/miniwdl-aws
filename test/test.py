@@ -4,6 +4,7 @@ import subprocess
 import time
 import pytest
 import boto3
+import random
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -374,3 +375,62 @@ def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
         upload=test_s3_folder + "test_shipping_local_wdl/",
     )
     assert rslt["outputs"]["outer.message"] == "Hello, world!"
+
+
+def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
+    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(9000))
+    with open(tmp_path / "almost_big.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            workflow outer {
+                input {
+                }
+                output {
+                    String big = "XXX"
+                }
+            }
+            """.replace(
+                "XXX", almost_big_str
+            ),
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "almost_big.wdl"),
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+    )
+    assert rslt["success"]
+
+    # Test for reasonable error when zipped WDL is too large
+    big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(20000))
+    with open(tmp_path / "big.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            workflow outer {
+                input {
+                }
+                output {
+                    String big = "XXX"
+                }
+            }
+            """.replace(
+                "XXX", big_str
+            ),
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "big.wdl"),
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+    )
+    assert rslt["exit_code"] == 123
