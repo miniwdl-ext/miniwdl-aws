@@ -123,7 +123,12 @@ def parse_args(argv):
     group.add_argument(
         "--task-queue",
         help="job queue for task jobs [env MINIWDL__AWS__TASK_QUEUE"
-        " or detect from DefaultTaskQueue tag on workflow job queue",
+        " or detect from DefaultTaskQueue tag on workflow job queue]",
+    )
+    group.add_argument(
+        "--task-queue-fallback",
+        help="job queue for task jobs following runtime.preemptible spot interruptions [env"
+        " MINIWDL__AWS__TASK_QUEUE_FALLBACK or detect from DefaultTaskQueueFallback tag on workflow job queue]",
     )
     group.add_argument(
         "--fsap",
@@ -231,6 +236,8 @@ def detect_env_args(args):
     args.task_queue = (
         args.task_queue if args.task_queue else os.environ.get("MINIWDL__AWS__TASK_QUEUE", None)
     )
+    if not args.task_queue_fallback:
+        args.task_queue_fallback = os.environ.get("MINIWDL__AWS__TASK_QUEUE_FALLBACK", None)
     args.workflow_role = (
         args.workflow_role
         if args.workflow_role
@@ -284,6 +291,8 @@ def detect_tags_args(aws_batch, args):
                     file=sys.stderr,
                 )
                 sys.exit(1)
+        if not args.task_queue_fallback:
+            args.task_queue_fallback = workflow_queue_tags.get("DefaultTaskQueueFallback", None)
         if args.efs and not args.fsap:
             try:
                 args.fsap = workflow_queue_tags["DefaultFsap"]
@@ -415,6 +424,10 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
         {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
     ]
+    if args.task_queue_fallback:
+        environment.append(
+            {"name": "MINIWDL__AWS__TASK_QUEUE_FALLBACK", "value": args.task_queue_fallback}
+        )
     if args.efs:
         environment.append({"name": "MINIWDL__AWS__FS", "value": fs_id})
         environment.append({"name": "MINIWDL__AWS__FSAP", "value": args.fsap})
@@ -431,6 +444,7 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
                 "MINIWDL__AWS__FS",
                 "MINIWDL__AWS__FSAP",
                 "MINIWDL__AWS__TASK_QUEUE",
+                "MINIWDL__AWS__TASK_QUEUE_FALLBACK",
                 "MINIWDL__AWS__WORKFLOW_QUEUE",
                 "MINIWDL__AWS__WORKFLOW_ROLE",
                 "MINIWDL__AWS__WORKFLOW_IMAGE",

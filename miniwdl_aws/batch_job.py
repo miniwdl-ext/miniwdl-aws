@@ -48,6 +48,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
         # set AWS Batch job queue
         cls._job_queue = cfg.get("aws", "task_queue", "")
+        cls._job_queue_fallback = cfg.get("aws", "task_queue_fallback", "")
 
         # TODO: query Batch compute environment for resource limits
         cls._resource_limits = {"cpu": 9999, "mem_bytes": 999999999999999}
@@ -70,6 +71,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         # the same as host_dir (unlike the default Swarm backend, which mounts it at a different
         # virtualized location)
         self.container_dir = self.host_dir
+        self._aws_interrupts = 0
 
     def copy_input_files(self, logger):
         self._inputs_copied = True
@@ -201,6 +203,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
         self._cleanup_job_definition(logger, cleanup, aws_batch, job_def_handle)
 
+        job_queue = self._select_job_queue()
         job_tags = self.cfg.get_dict("aws", "job_tags", {})
         if "AWS_BATCH_JOB_ID" in os.environ:
             # If we find ourselves running inside an AWS Batch job, tag the new job identifying
@@ -209,7 +212,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         # TODO: set a tag to indicate that this job is a retry of another
         job = aws_batch.submit_job(
             jobName=job_name,
-            jobQueue=self._job_queue,
+            jobQueue=job_queue,
             jobDefinition=job_def_handle,
             timeout={"attemptDurationSeconds": self.cfg.get_int("aws", "job_timeout", 86400)},
             tags=job_tags,
@@ -217,12 +220,19 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         logger.info(
             _(
                 "AWS Batch job submitted",
-                jobQueue=self._job_queue,
+                jobQueue=job_queue,
                 jobId=job["jobId"],
                 tags=job_tags,
             )
         )
         return job["jobId"]
+
+    def _select_job_queue(self):
+        if self._job_queue_fallback:
+            preemptible = self.runtime_values.get("preemptible", 0)
+            if self._aws_interrupts >= preemptible and preemptible > 0:
+                return self._job_queue_fallback
+        return self._job_queue
 
     def _prepare_container_properties(self, logger):
         image_tag = self.runtime_values.get("docker", "ubuntu:20.04")
@@ -343,6 +353,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
                 if self._logStreamName:
                     self.failure_info["logStreamName"] = self._logStreamName
                 if status_reason and "Host EC2" in status_reason and "terminated" in status_reason:
+                    self._aws_interrupts += 1
                     raise WDL.runtime.Interrupted(
                         "AWS Batch job interrupted (likely spot instance termination)",
                         more_info=self.failure_info,
