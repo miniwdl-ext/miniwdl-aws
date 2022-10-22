@@ -9,7 +9,8 @@ RUN yum check-update; yum install -y \
         awscli
 
 # miniwdl-aws (and PyPI dependencies listed in setup.py)
-RUN bash -c 'pip3 install git+https://github.com/staskh/miniwdl.git'
+RUN bash -c 'cd /tmp && git clone https://github.com/staskh/miniwdl.git'
+RUN bash -c 'cd /tmp/miniwdl && pip3 install .'
 COPY ./ /tmp/miniwdl-aws/
 RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 
