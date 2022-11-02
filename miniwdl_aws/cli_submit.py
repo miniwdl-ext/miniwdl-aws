@@ -36,7 +36,7 @@ def miniwdl_submit_awsbatch(argv):
             "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return 1
     aws_batch = boto3.client("batch", region_name=aws_region_name)
     detect_tags_args(aws_batch, args)
 
@@ -151,7 +151,7 @@ def miniwdl_submit_awsbatch(argv):
             args.follow,
             expect_log_eof=not args.self_test,
         )
-    sys.exit(exit_code)
+    return exit_code
 
 
 def parse_args(argv):
