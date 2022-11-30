@@ -2,15 +2,17 @@
 
 **Extends [miniwdl](https://github.com/chanzuckerberg/miniwdl) to run workflows on [AWS Batch](https://aws.amazon.com/batch/) and [EFS](https://aws.amazon.com/efs/)**
 
-This miniwdl plugin enables it to execute WDL tasks as AWS Batch jobs. It uses EFS for work-in-progress file I/O, optionally uploading final workflow outputs to S3. There are a few ways to use it:
+This miniwdl plugin enables it to execute WDL tasks as AWS Batch jobs. It uses EFS for work-in-progress file I/O, optionally uploading final workflow outputs to S3.
 
-## Use with Amazon Genomics CLI
+Before diving into this, first consider [Amazon Omics](https://aws.amazon.com/omics/), which includes a [WDL workflow runner service](https://docs.aws.amazon.com/omics/latest/dev/creating-workflows.html) that doesn't need you to deploy compute infrastructure in your AWS account. (The behind-the-scenes implementation differs from the plugin found here.)
 
-[<img width="985" src="https://d1.awsstatic.com/product-page-diagram_Amazon-Genomics-CLI_HIW-V3%402x.ccc89cf68c3249249ae34f2ab77872d73565a236.png">](https://aws.amazon.com/genomics-cli/)
+There are a few ways to deploy this miniwdl-aws plugin:
 
-[Amazon Genomics CLI](https://aws.amazon.com/genomics-cli/) can deploy a [miniwdl context](https://aws.github.io/amazon-genomics-cli/docs/workflow-engines/miniwdl/) with everything pre-configured.
+## Amazon Genomics CLI
 
-## Use with Amazon SageMaker Studio
+[Amazon Genomics CLI](https://aws.amazon.com/genomics-cli/) can deploy a [miniwdl-aws context](https://aws.github.io/amazon-genomics-cli/docs/workflow-engines/miniwdl/) into your AWS account with all the necessary infrastructure.
+
+## Amazon SageMaker Studio
 
 Or, try the [**miniwdl-aws-studio**](https://github.com/miniwdl-ext/miniwdl-aws-studio) recipe to install miniwdl for interactive use within [Amazon SageMaker Studio](https://aws.amazon.com/sagemaker/studio/), a web IDE with a terminal and filesystem browser. You can use the terminal to operate `miniwdl run` against AWS Batch, the filesystem browser to manage the inputs and outputs on EFS, and the Jupyter notebooks to further analyze the outputs.
 
