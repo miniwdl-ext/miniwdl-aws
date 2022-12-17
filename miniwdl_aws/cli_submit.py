@@ -55,7 +55,7 @@ def miniwdl_submit_awsbatch(argv):
     if verbose:
         print("Workflow job image: " + args.image, file=sys.stderr)
         print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
-    workflow_container_props, workflow_container_overrides = form_workflow_container_props(
+    workflow_container_props, workflow_container_overrides, tags = form_workflow_container_props(
         args, miniwdl_run_cmd, fs_id, wdl_zip, verbose
     )
 
@@ -81,6 +81,7 @@ def miniwdl_submit_awsbatch(argv):
             jobQueue=args.workflow_queue,
             jobDefinition=workflow_job_def_handle,
             containerOverrides=workflow_container_overrides,
+            tags=tags,
         )["jobId"]
         if verbose:
             print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
@@ -408,7 +409,7 @@ def zip_wdl(wdl_filename, verbose=False):
     import base64
     import lzma
 
-    zip_str = base64.b85encode(
+    zip_str = base64.urlsafe_b64encode(
         lzma.compress(zip_bytes, format=lzma.FORMAT_ALONE, preset=(9 | lzma.PRESET_EXTREME))
     ).decode("ascii")
     if verbose:
@@ -470,13 +471,28 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
         ],
         "environment": [],
     }
+    tags = {}
     if wdl_zip:
         # If the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in the
-        # workflow job environment, to be picked up by miniwdl-run-s3upload. And below we put a few
-        # things in ContainerOverrides instead of ContainerProperties to maximize the zip's chance
-        # to fit in RegisterJobDefinition, although (as of this writing) it seems to be limited by
-        # the 8KiB ContainerOverrides limit anyway.
-        workflow_container_props["environment"].append({"name": "WDL_ZIP", "value": wdl_zip})
+        # workflow job environment, to be picked up by miniwdl-run-s3upload. If the encoded zip is
+        # over 4096 characters, then spray the remainder across tags on the workflow job. The 4KiB
+        # keeps our container properties (+overrides) within AWS' 8KiB limit. Then we use up to 42
+        # tags with 381 usable bytes each (within the AWS limits of 50 tags with key length 128 and
+        # value length 256). Total capacity = 4096 + 42*381 = 20098 characters.
+        workflow_container_props["environment"].append({"name": "WDL_ZIP", "value": wdl_zip[:4096]})
+        wdl_zip = wdl_zip[4096:]
+        tag_num = 0
+        while wdl_zip:
+            if tag_num >= 42:
+                print(_WDL_ZIP_SIZE_MSG, file=sys.stderr)
+                sys.exit(123)
+            tags[
+                "WZ"
+                + chr((ord("A") if tag_num < 26 else (ord("a") - 26)) + tag_num)
+                + wdl_zip[:125]
+            ] = wdl_zip[125:381]
+            wdl_zip = wdl_zip[381:]
+            tag_num += 1
     workflow_container_overrides = {
         "command": miniwdl_run_cmd,
         "environment": environment,
@@ -518,7 +534,7 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
             }
         )
 
-    return (workflow_container_props, workflow_container_overrides)
+    return (workflow_container_props, workflow_container_overrides, tags)
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):
