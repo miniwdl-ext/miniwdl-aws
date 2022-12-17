@@ -249,10 +249,27 @@ def get_wdl_zip():
     Load `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit, encoded in the
     environment variable WDL_ZIP
     """
+
+    encoded_zip = os.environ["WDL_ZIP"]
+    if len(encoded_zip) >= 4096:
+        # Look for spillover in job tags
+        desc = json.loads(
+            subprocess_run_with_clean_exit(
+                ["aws", "batch", "describe-jobs", "--jobs", os.environ["AWS_BATCH_JOB_ID"]],
+                stdout=subprocess.PIPE,
+                check=True,
+            ).stdout
+        )
+        assert len(desc["jobs"]) == 1
+        tags = desc["jobs"][0]["tags"]
+        for key in sorted(tags.keys()):
+            if key.startswith("WZ") and len(key) > 3:
+                encoded_zip += key[3:] + tags[key]
+
     import base64
     import lzma
 
-    zip_bytes = lzma.decompress(base64.b85decode(os.environ["WDL_ZIP"]), format=lzma.FORMAT_ALONE)
+    zip_bytes = lzma.decompress(base64.urlsafe_b64decode(encoded_zip), format=lzma.FORMAT_ALONE)
     fd, fn = tempfile.mkstemp(suffix=".zip", prefix="wdl_")
     os.write(fd, zip_bytes)
     os.close(fd)
