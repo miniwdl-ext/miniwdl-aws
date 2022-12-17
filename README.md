@@ -85,17 +85,16 @@ To mitigate this, test workflows thoroughly using the local backend, which stric
 
 ### EFS performance considerations
 
-To scale up to larger workloads, it's important to study AWS documentation on EFS [performance](https://docs.aws.amazon.com/efs/latest/ug/performance.html) and [monitoring](https://docs.aws.amazon.com/efs/latest/ug/monitoring-cloudwatch.html). Like any network file system, EFS limits on throughput and IOPS can cause bottlenecks; and worse, throughput burst credit exhaustion can effectively freeze a workflow.
+To scale up to larger workloads, it's important to study AWS documentation on EFS [performance](https://docs.aws.amazon.com/efs/latest/ug/performance.html) and [monitoring](https://docs.aws.amazon.com/efs/latest/ug/monitoring-cloudwatch.html). Like any network file system, EFS limits on throughput and IOPS can cause bottlenecks; and worse, exhaustion of the default bursting throughput mode can effectively freeze a workflow.
 
 Management tips:
 
 * Monitor file system throughput limits, IOPS, and burst credits in the EFS area of the AWS Console.
-* Create the file system in "Max I/O" performance mode.
 * Stage large datasets onto the file system well in advance, increasing the available burst throughput.
-* Temporarily provision higher throughput than bursting mode provides (24-hour minimum provisioning commitment).
+* Enable the Elastic or Provisioned throughput modes (at increased cost)
+* Code WDL tasks to write any purely-temporary files into `$TMPDIR`, which may use local scratch space, instead of the EFS working directory.
 * Configure miniwdl and AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
 * Spread out separate workflow runs over time or across multiple EFS file systems.
-* Code WDL tasks to write any purely-temporary files into `$TMPDIR`, which may use local scratch space, instead of the EFS working directory.
 
 ### FSx for Lustre and other shared filesystems
 
