@@ -16,7 +16,7 @@ import shutil
 import argparse
 import tempfile
 import signal
-from ._util import END_OF_LOG, subprocess_run_with_clean_exit
+from ._util import END_OF_LOG, subprocess_run_with_clean_exit, WDL_ZIP_PREFIX
 
 
 def miniwdl_run_s3upload():
@@ -86,10 +86,10 @@ def miniwdl_run_s3upload_inner():
                 )
             upload1(testfile, args.s3upload + ("/" if not args.s3upload.endswith("/") else ""))
 
-    zip_arg = next((i for i, arg in enumerate(unused_args) if arg == "--WDL--ZIP--"), -1)
+    zip_arg = next((i for i, arg in enumerate(unused_args) if arg.startswith("WDLZIP:")), -1)
     if zip_arg >= 0:
         # get `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit
-        unused_args[zip_arg] = get_wdl_zip()
+        unused_args[zip_arg] = get_wdl_zip(unused_args[zip_arg])
 
     cmd = ["miniwdl", "run"] + unused_args
     if "--error-json" not in unused_args:
@@ -244,15 +244,17 @@ def rebase_output_path(fn, run_dir, s3_upload_folder):
     return fn
 
 
-def get_wdl_zip():
+def get_wdl_zip(zip_arg):
     """
-    Load `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit, encoded in the
-    environment variable WDL_ZIP
+    Load `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit
     """
+    assert zip_arg.startswith(WDL_ZIP_PREFIX)
     import base64
     import lzma
 
-    zip_bytes = lzma.decompress(base64.b85decode(os.environ["WDL_ZIP"]), format=lzma.FORMAT_ALONE)
+    zip_bytes = lzma.decompress(
+        base64.b85decode(zip_arg[len(WDL_ZIP_PREFIX) :]), format=lzma.FORMAT_ALONE
+    )
     fd, fn = tempfile.mkstemp(suffix=".zip", prefix="wdl_")
     os.write(fd, zip_bytes)
     os.close(fd)

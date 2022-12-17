@@ -212,3 +212,4 @@ def subprocess_run_with_clean_exit(*args, check=False, **kwargs):
 
 
 END_OF_LOG = "[miniwdl_run_s3upload] -- END OF LOG --"
+WDL_ZIP_PREFIX = "WDLZIP:"

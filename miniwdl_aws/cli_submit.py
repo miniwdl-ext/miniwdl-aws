@@ -14,7 +14,13 @@ import shlex
 from datetime import datetime
 from collections import defaultdict
 import boto3
-from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_from_access_point
+from ._util import (
+    detect_aws_region,
+    randomize_job_name,
+    END_OF_LOG,
+    efs_id_from_access_point,
+    WDL_ZIP_PREFIX,
+)
 
 
 def miniwdl_submit_awsbatch(argv):
@@ -55,9 +61,7 @@ def miniwdl_submit_awsbatch(argv):
     if verbose:
         print("Workflow job image: " + args.image, file=sys.stderr)
         print("Invocation: " + " ".join(shlex.quote(s) for s in miniwdl_run_cmd), file=sys.stderr)
-    workflow_container_props, workflow_container_overrides = form_workflow_container_props(
-        args, miniwdl_run_cmd, fs_id, wdl_zip, verbose
-    )
+    workflow_container_props = form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose)
 
     # Register & submit workflow job
     try:
@@ -73,15 +77,17 @@ def miniwdl_submit_awsbatch(argv):
             sys.exit(123)
         raise
     workflow_job_def_handle = (
-        f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
+            f"{workflow_job_def['jobDefinitionName']}:{workflow_job_def['revision']}"
     )
     try:
-        workflow_job_id = aws_batch.submit_job(
-            jobName=job_name,
-            jobQueue=args.workflow_queue,
-            jobDefinition=workflow_job_def_handle,
-            containerOverrides=workflow_container_overrides,
-        )["jobId"]
+        submit_kwargs = {
+            "jobName": job_name,
+            "jobQueue": args.workflow_queue,
+            "jobDefinition": workflow_job_def_handle,
+        }
+        if wdl_zip:
+            submit_kwargs["parameters"] = {"wdl_zip": wdl_zip}
+        workflow_job_id = aws_batch.submit_job(**submit_kwargs)["jobId"]
         if verbose:
             print(f"Submitted {job_name} to {args.workflow_queue}:", file=sys.stderr)
             sys.stderr.flush()
@@ -344,8 +350,9 @@ def form_miniwdl_run_cmd(args, unused_args, verbose=False):
         wdl_filename = unused_args[wdl_filename_pos]
         wdl_zip = zip_wdl(wdl_filename, verbose)
         if wdl_zip:
-            # this sentinel argument will be recognized by miniwdl-run-s3upload
-            unused_args[wdl_filename_pos] = "--WDL--ZIP--"
+            # Batch will replace this with the wdl_zip text passed through a job parameter.
+            # cli_run_s3upload.py will recognize its "WDLZIP:" prefix.
+            unused_args[wdl_filename_pos] = "Ref::wdl_zip"
         job_name = args.name
         if not job_name:
             job_name = os.path.basename(wdl_filename).lstrip(".")
@@ -416,10 +423,10 @@ def zip_wdl(wdl_filename, verbose=False):
             f"WDL/ZIP: {wdl_filename} (encoded as {len(zip_str)} bytes to submit with workflow job)",
             file=sys.stderr,
         )
-    return zip_str
+    return WDL_ZIP_PREFIX + zip_str
 
 
-def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, verbose=False):
+def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, verbose=False):
     environment = [
         {"name": "MINIWDL__AWS__TASK_QUEUE", "value": args.task_queue},
         {"name": "MINIWDL__FILE_IO__ROOT", "value": args.mount},
@@ -468,16 +475,6 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
             {"type": "VCPU", "value": str(args.cpu)},
             {"type": "MEMORY", "value": str(args.memory_GiB * 1024)},
         ],
-        "environment": [],
-    }
-    if wdl_zip:
-        # If the command line provided a local WDL (or WDL zipped by `miniwdl zip`), ship it in the
-        # workflow job environment, to be picked up by miniwdl-run-s3upload. And below we put a few
-        # things in ContainerOverrides instead of ContainerProperties to maximize the zip's chance
-        # to fit in RegisterJobDefinition, although (as of this writing) it seems to be limited by
-        # the 8KiB ContainerOverrides limit anyway.
-        workflow_container_props["environment"].append({"name": "WDL_ZIP", "value": wdl_zip})
-    workflow_container_overrides = {
         "command": miniwdl_run_cmd,
         "environment": environment,
     }
@@ -518,7 +515,7 @@ def form_workflow_container_props(args, miniwdl_run_cmd, fs_id, wdl_zip=None, ve
             }
         )
 
-    return (workflow_container_props, workflow_container_overrides)
+    return workflow_container_props
 
 
 def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=True):

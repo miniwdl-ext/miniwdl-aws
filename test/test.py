@@ -371,6 +371,7 @@ def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
             "who=world",
             "--dir",
             "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
         ],
         upload=test_s3_folder + "test_shipping_local_wdl/",
     )
@@ -378,7 +379,7 @@ def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
 
 
 def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
-    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(9000))
+    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(14500))
     with open(tmp_path / "almost_big.wdl", "w") as outfile:
         print(
             """
@@ -402,6 +403,7 @@ def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
             str(tmp_path / "almost_big.wdl"),
             "--dir",
             "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
         ],
     )
     assert rslt["success"]
@@ -431,6 +433,7 @@ def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
             str(tmp_path / "big.wdl"),
             "--dir",
             "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
         ],
     )
     assert rslt["exit_code"] == 123
