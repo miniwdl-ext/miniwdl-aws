@@ -252,19 +252,34 @@ def get_wdl_zip():
 
     encoded_zip = os.environ["WDL_ZIP"]
     if len(encoded_zip) >= 4096:
-        # Look for spillover in job tags
-        desc = json.loads(
+        # Look for spillover in job & job def tags
+        job_desc = json.loads(
             subprocess_run_with_clean_exit(
                 ["aws", "batch", "describe-jobs", "--jobs", os.environ["AWS_BATCH_JOB_ID"]],
                 stdout=subprocess.PIPE,
                 check=True,
             ).stdout
-        )
-        assert len(desc["jobs"]) == 1
-        tags = desc["jobs"][0]["tags"]
-        for key in sorted(tags.keys()):
-            if key.startswith("WZ") and len(key) > 3:
-                encoded_zip += key[3:] + tags[key]
+        )["jobs"][0]
+        job_tags = job_desc["tags"]
+        job_def_tags = json.loads(
+            subprocess_run_with_clean_exit(
+                [
+                    "aws",
+                    "batch",
+                    "describe-job-definitions",
+                    "--job-definitions",
+                    job_desc["jobDefinition"],
+                ],
+                stdout=subprocess.PIPE,
+                check=True,
+            ).stdout
+        )["jobDefinitions"][0]["tags"]
+        # if no job_def_tags, then there shouldn't be job_tags either
+        assert job_def_tags or not job_tags
+        for tags in (job_def_tags, job_tags):
+            for key in sorted(tags.keys()):
+                if key.startswith("WZ") and len(key) > 3:
+                    encoded_zip += key[3:] + tags[key]
 
     import base64
     import lzma

@@ -378,7 +378,7 @@ def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
 
 
 def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
-    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(23000))
+    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(42000))
     with open(tmp_path / "almost_big.wdl", "w") as outfile:
         print(
             """
@@ -409,7 +409,7 @@ def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
     assert rslt["outputs"]["outer.big"] == almost_big_str
 
     # Test for reasonable error when zipped WDL is too large
-    big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(28000))
+    big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(50000))
     with open(tmp_path / "big.wdl", "w") as outfile:
         print(
             """
