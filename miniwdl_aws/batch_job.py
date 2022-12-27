@@ -165,6 +165,12 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
                 assert container_fn.startswith(container_prefix) and len(container_fn) > len(
                     container_prefix
                 )
+                if host_fn.endswith("/"):
+                    assert container_fn.endswith("/")
+                    host_fn = host_fn[:-1]
+                    container_fn = container_fn[:-1]
+                else:
+                    assert not container_fn.endswith("/")
                 link_dn = os.path.dirname(container_fn)
                 if link_dn not in link_dirs_made:
                     os.makedirs(link_dn)

@@ -326,6 +326,42 @@ def test_download(aws_batch):
     assert rslt["success"]
 
 
+def test_directory(aws_batch, test_s3_folder):
+    """
+    Test Directory I/O
+    """
+
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            "/var/miniwdl_aws_test_assets/test_directory.wdl",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
+        ],
+        upload=test_s3_folder + "test_directory/",
+    )
+    assert rslt["success"]
+    assert rslt["outputs"]["test_directory_workflow.dir"].startswith("s3://")
+    assert rslt["outputs"]["test_directory_workflow.file_count"] == 3
+
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            "/var/miniwdl_aws_test_assets/test_directory.wdl",
+            "dir=s3://1000genomes/changelog_details/",
+            "--task",
+            "test_directory",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
+        ],
+        upload=test_s3_folder + "test_directory/",
+    )
+    assert rslt["success"]
+    assert rslt["outputs"]["test_directory.file_count"] > 100
+
+
 def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
     with open(tmp_path / "outer.wdl", "w") as outfile:
         print(
