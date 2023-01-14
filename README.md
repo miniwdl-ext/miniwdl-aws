@@ -91,7 +91,7 @@ Management tips:
 
 * Monitor file system throughput limits, IOPS, and burst credits in the EFS area of the AWS Console.
 * Stage large datasets onto the file system well in advance, increasing the available burst throughput.
-* Enable the Elastic or Provisioned throughput modes (at increased cost)
+* Enable the *Elastic* or *Provisioned* throughput modes (at increased cost)
 * Code WDL tasks to write any purely-temporary files into `$TMPDIR`, which may use local scratch space, instead of the EFS working directory.
 * Configure miniwdl and AWS Batch to limit the number of concurrent jobs and/or the rate at which they turn over (see [miniwdl_aws.cfg](https://github.com/miniwdl-ext/miniwdl-aws/blob/main/miniwdl_aws.cfg) for relevant details).
 * Spread out separate workflow runs over time or across multiple EFS file systems.
