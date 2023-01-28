@@ -249,7 +249,8 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         commands = [
             f"cd {self.container_dir}/work",
             "exit_code=0",
-            "bash -l ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
+            self.cfg.get("task_runtime", "command_shell")
+            + " ../command >> ../stdout.txt 2> >(tee -a ../stderr.txt >&2) || exit_code=$?",
         ]
         if self.cfg.get_bool("aws", "container_sync", False):
             commands.append("find . -type f | xargs sync")

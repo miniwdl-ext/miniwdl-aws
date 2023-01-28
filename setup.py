@@ -14,7 +14,7 @@ setup(
     python_requires=">=3.6",
     packages=find_packages(),
     setup_requires=["reentry"],
-    install_requires=["miniwdl>=1.7.1", "boto3>=1.17", "requests"],
+    install_requires=["miniwdl>=1.9.0", "boto3>=1.17", "requests"],
     reentry_register=True,
     entry_points={
         "miniwdl.plugin.container_backend": [
