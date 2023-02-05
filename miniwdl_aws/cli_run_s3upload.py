@@ -184,7 +184,6 @@ def miniwdl_run_s3upload_inner():
 
     # recursively rewrite outputs JSON
     def rewrite(v):
-
         if v and isinstance(v, str) and v[0] == "/" and os.path.exists(v):
             # miniwdl writes File/Directory outputs with absolute paths
             return rebase_output_path(v, run_dir, s3_upload_folder)

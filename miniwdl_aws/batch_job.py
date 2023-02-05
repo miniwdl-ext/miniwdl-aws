@@ -270,7 +270,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
             "command": ["/bin/bash", "-ec", "\n".join(commands)],
             "environment": [
                 {"name": ev_name, "value": ev_value}
-                for ev_name, ev_value in self.runtime_values.get("env", dict())
+                for ev_name, ev_value in self.runtime_values.get("env", dict()).items()
             ],
             "resourceRequirements": resource_requirements,
             "privileged": self.runtime_values.get("privileged", False),
