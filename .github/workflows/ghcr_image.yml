@@ -8,7 +8,7 @@ jobs:
     if: github.repository == 'staskh/miniwdl-aws' # run on  my fork
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: docker login ghcr.io

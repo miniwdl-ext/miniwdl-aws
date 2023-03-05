@@ -14,7 +14,6 @@ DEFAULT_WORKFLOW_QUEUE = "miniwdl-workflow"
 
 
 def miniwdl_aws_status(argv=sys.argv):
-
     # Configure from arguments/environment/tags
     args, unused_args = parse_args(argv)
     detect_env_args(args)
@@ -46,7 +45,6 @@ def miniwdl_aws_status(argv=sys.argv):
 
 
 def parse_args(argv):
-
     parser = argparse.ArgumentParser(
         prog="miniwdl-aws-status",
         description="report status of miniwdl jobs submited to AWS Batch with miiwdl-aws-submit",
@@ -235,7 +233,6 @@ def get_latest_job(aws_batch, args):
 
 
 def job_status(aws_batch, aws_logs, args):
-
     if not args.job_id:
         print(
             "[WARNING] No --job-id parameter specified, use the latest submited job",
