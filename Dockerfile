@@ -6,6 +6,7 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2
 # rpm dependencies
 RUN yum check-update; yum install -y \
         python3-pip \
+        git     \
         unzip
 
 # AWS CLI v2 (`yum install awscli` is a really old version)
