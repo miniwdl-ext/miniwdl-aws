@@ -4,6 +4,7 @@ import subprocess
 import time
 import pytest
 import boto3
+import random
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -178,6 +179,10 @@ def test_termination(aws_batch, test_s3_folder):
         "This is the end, my only friend"
         in get_s3uri(rslt["error"]["cause"]["stderr_s3file"]).decode()
     )
+    assert (
+        "I'll never look into your eyes again"
+        in get_s3uri(rslt["error"]["cause"]["stdout_s3file"]).decode()
+    )
     assert time.time() - t0 < 600
 
 
@@ -319,3 +324,151 @@ def test_download(aws_batch):
         ],
     )
     assert rslt["success"]
+
+
+def test_directory(aws_batch, test_s3_folder):
+    """
+    Test Directory I/O
+    """
+
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            "/var/miniwdl_aws_test_assets/test_directory.wdl",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
+        ],
+        upload=test_s3_folder + "test_directory/",
+    )
+    assert rslt["success"]
+    assert rslt["outputs"]["test_directory_workflow.dir"].startswith("s3://")
+    assert rslt["outputs"]["test_directory_workflow.file_count"] == 3
+
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            "/var/miniwdl_aws_test_assets/test_directory.wdl",
+            "dir=s3://1000genomes/changelog_details/",
+            "--task",
+            "test_directory",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
+        ],
+        upload=test_s3_folder + "test_directory/",
+    )
+    assert rslt["success"]
+    assert rslt["outputs"]["test_directory.file_count"] > 100
+
+
+def test_shipping_local_wdl(aws_batch, tmp_path, test_s3_folder):
+    with open(tmp_path / "outer.wdl", "w") as outfile:
+        print(
+            """
+            version development
+            import "inner.wdl"
+
+            workflow outer {
+                input {
+                    String who
+                }
+                call inner.hello { input: who }
+                output {
+                    String message = hello.message
+                }
+            }
+            """,
+            file=outfile,
+        )
+    with open(tmp_path / "inner.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            task hello {
+                input {
+                    String who
+                }
+                command {
+                    echo 'Hello, ~{who}!'
+                }
+                output {
+                    String message = read_string(stdout())
+                }
+            }
+            """,
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "outer.wdl"),
+            "who=world",
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+        upload=test_s3_folder + "test_shipping_local_wdl/",
+    )
+    assert rslt["outputs"]["outer.message"] == "Hello, world!"
+
+
+def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
+    almost_big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(42000))
+    with open(tmp_path / "almost_big.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            workflow outer {
+                input {
+                }
+                output {
+                    String big = "XXX"
+                }
+            }
+            """.replace(
+                "XXX", almost_big_str
+            ),
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "almost_big.wdl"),
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+        upload=test_s3_folder + "test_shipping_local_wdl_error/",
+    )
+    assert rslt["success"]
+    assert rslt["outputs"]["outer.big"] == almost_big_str
+
+    # Test for reasonable error when zipped WDL is too large
+    big_str = "".join(chr(random.randrange(ord("A"), ord("Z"))) for _ in range(50000))
+    with open(tmp_path / "big.wdl", "w") as outfile:
+        print(
+            """
+            version development
+
+            workflow outer {
+                input {
+                }
+                output {
+                    String big = "XXX"
+                }
+            }
+            """.replace(
+                "XXX", big_str
+            ),
+            file=outfile,
+        )
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            str(tmp_path / "big.wdl"),
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+        ],
+    )
+    assert rslt["exit_code"] == 123

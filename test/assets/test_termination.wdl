@@ -18,6 +18,7 @@ task t {
         if (( ~{i} == 3 )); then
             sleep 10
             >&2 echo -n "This is the end, my only friend"
+            echo "I'll never look into your eyes again"
             exit 42
         fi
         sleep 600

@@ -86,6 +86,11 @@ def miniwdl_run_s3upload_inner():
                 )
             upload1(testfile, args.s3upload + ("/" if not args.s3upload.endswith("/") else ""))
 
+    zip_arg = next((i for i, arg in enumerate(unused_args) if arg == "--WDL--ZIP--"), -1)
+    if zip_arg >= 0:
+        # get `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit
+        unused_args[zip_arg] = get_wdl_zip()
+
     cmd = ["miniwdl", "run"] + unused_args
     if "--error-json" not in unused_args:
         cmd.append("--error-json")
@@ -133,21 +138,25 @@ def miniwdl_run_s3upload_inner():
         if os.path.isfile(p):
             upload1(p, s3_upload_folder)
 
-    # upload error.json, and the stderr_file it points to, if any
+    # upload error.json, and the std{out,err}_file it points to, if any
     error_json_file = os.path.join(run_dir, "error.json")
     if os.path.isfile(error_json_file):
         upload1(error_json_file, s3_upload_folder)
+        reupload = False
         with open(error_json_file) as infile:
             error_json = json.load(infile)
-            stderr_file = error_json.get("cause", {}).get("stderr_file", None)
-            if stderr_file and os.path.isfile(stderr_file):
-                stderr_s3file = s3_upload_folder + "CommandFailed_stderr.txt"
-                upload1(stderr_file, stderr_s3file)
-                error_json["cause"]["stderr_s3file"] = stderr_s3file
-                with tempfile.NamedTemporaryFile() as tmp:
-                    tmp.write(json.dumps(error_json, indent=2).encode())
-                    tmp.flush()
-                    upload1(tmp.name, s3_upload_folder + "error.json")
+            for std_key in ("stderr", "stdout"):
+                std_file = error_json.get("cause", {}).get(std_key + "_file", None)
+                if std_file and os.path.isfile(std_file):
+                    std_s3file = f"{s3_upload_folder}CommandFailed_{std_key}.txt"
+                    upload1(std_file, std_s3file)
+                    error_json["cause"][std_key + "_s3file"] = std_s3file
+                    reupload = True
+        if reupload:
+            with tempfile.NamedTemporaryFile() as tmp:
+                tmp.write(json.dumps(error_json, indent=2).encode())
+                tmp.flush()
+                upload1(tmp.name, s3_upload_folder + "error.json")
 
     # upload output files, if any
     if os.path.isdir(os.path.join(run_dir, "out")):
@@ -175,7 +184,6 @@ def miniwdl_run_s3upload_inner():
 
     # recursively rewrite outputs JSON
     def rewrite(v):
-
         if v and isinstance(v, str) and v[0] == "/" and os.path.exists(v):
             # miniwdl writes File/Directory outputs with absolute paths
             return rebase_output_path(v, run_dir, s3_upload_folder)
@@ -232,4 +240,51 @@ def rebase_output_path(fn, run_dir, s3_upload_folder):
         if os.path.exists(fn_rebased) and os.path.isdir(fn) == os.path.isdir(fn_rebased):
             return s3_upload_folder + fn_rel
         fn_parts = fn_parts[1:]
+    return fn
+
+
+def get_wdl_zip():
+    """
+    Load `miniwdl zip`ped WDL source code shipped to us by miniwdl-aws-submit, encoded in the
+    environment variable WDL_ZIP
+    """
+
+    encoded_zip = os.environ["WDL_ZIP"]
+    if len(encoded_zip) >= 4096:
+        # Look for spillover in job & job def tags
+        job_desc = json.loads(
+            subprocess_run_with_clean_exit(
+                ["aws", "batch", "describe-jobs", "--jobs", os.environ["AWS_BATCH_JOB_ID"]],
+                stdout=subprocess.PIPE,
+                check=True,
+            ).stdout
+        )["jobs"][0]
+        job_tags = job_desc["tags"]
+        job_def_tags = json.loads(
+            subprocess_run_with_clean_exit(
+                [
+                    "aws",
+                    "batch",
+                    "describe-job-definitions",
+                    "--job-definitions",
+                    job_desc["jobDefinition"],
+                ],
+                stdout=subprocess.PIPE,
+                check=True,
+            ).stdout
+        )["jobDefinitions"][0]["tags"]
+        # if no job_def_tags, then there shouldn't be job_tags either
+        assert job_def_tags or not job_tags
+        for tags in (job_def_tags, job_tags):
+            for key in sorted(tags.keys()):
+                if key.startswith("WZ") and len(key) > 3:
+                    encoded_zip += key[3:] + tags[key]
+
+    import base64
+    import lzma
+
+    zip_bytes = lzma.decompress(base64.urlsafe_b64decode(encoded_zip), format=lzma.FORMAT_ALONE)
+    fd, fn = tempfile.mkstemp(suffix=".zip", prefix="wdl_")
+    os.write(fd, zip_bytes)
+    os.close(fd)
     return fn
