@@ -135,8 +135,8 @@ def detect_tags_args(aws_batch, args):
                 file=sys.stderr,
             )
             sys.exit(1)
-
         workflow_queue_tags = workflow_queue["jobQueues"][0]["tags"]
+        
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:

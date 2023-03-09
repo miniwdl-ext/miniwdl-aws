@@ -287,9 +287,15 @@ def detect_tags_args(aws_batch, args):
     role ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the expected tags.
     """
     if not args.task_queue or (args.efs and not (args.fsap or args.workflow_role)):
-        workflow_queue_tags = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
-            "jobQueues"
-        ][0]["tags"]
+        workflow_queue = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])
+        if "jobQueues" not in workflow_queue or len(workflow_queue["jobQueues"]) == 0:
+            print(
+                f"Unable to find workflow job queue [{args.workflow_queue}]. Set --workflow-queue or environment variable MINIWDL__AWS__WORKFLOW_QUEUE.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        workflow_queue_tags = workflow_queue["jobQueues"][0]["tags"]
+
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:
