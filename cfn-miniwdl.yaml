@@ -454,7 +454,7 @@ Resources:
   ComputeEnvironmentTask:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: !Sub ${Environment}-task
+      #ComputeEnvironmentName: !Sub ${Environment}-task #to avoid "Object already exists" error
       ServiceRole: !GetAtt IAMRoleBatch.Arn
       Type: MANAGED
       State: ENABLED
@@ -493,7 +493,7 @@ Resources:
   ComputeEnvironmentWorkflow:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: !Sub ${Environment}-workflow
+      #ComputeEnvironmentName: !Sub ${Environment}-workflow #to avoid "Object already exists" error
       ServiceRole: !GetAtt IAMRoleBatch.Arn
       Type: MANAGED
       State: ENABLED

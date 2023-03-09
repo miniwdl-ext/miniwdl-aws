@@ -128,10 +128,15 @@ def detect_tags_args(aws_batch, args):
     ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the respective tags.
     """
     if not (args.task_queue):
-        workflow_queue_tags = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
-            "jobQueues"
-        ][0]["tags"]
+        workflow_queue = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])
+        if "jobQueues" not in workflow_queue or len(workflow_queue["jobQueues"]) == 0:
+            print(
+                f"Unable to find workflow job queue [{args.workflow_queue}]. Set --workflow-queue or environment variable MINIWDL__AWS__WORKFLOW_QUEUE.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
+        workflow_queue_tags = workflow_queue["jobQueues"][0]["tags"]
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:
@@ -294,28 +299,29 @@ def job_status(aws_batch, aws_logs, args):
     if len(task_id) > 0:
         task_id = list(set(task_id))  # eliminate  dublicates
         print(f"Sub-tasks   : {len(task_id)}")
-        task_description = aws_batch.describe_jobs(jobs=task_id)
-        if "jobs" not in job_description:
-            print(f"can't find job  description for {task_id}", file=sys.stderr)
-            sys.exit(1)
+        # need to divide task_id array into chunks of 100 elements
+        for i in range(0, len(task_id), 100):
+            task_description = aws_batch.describe_jobs(jobs=task_id[i : i + 100])
+            if "jobs" not in task_description:
+                print(f"can't find job  description for {task_id}", file=sys.stderr)
+                sys.exit(1)
 
-        tasks = task_description["jobs"]
-        for task in tasks:
-            start_time_str = (
-                datetime.utcfromtimestamp(task["createdAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                if "createdAt" in task
-                else "----"
-            )
-            stop_time_str = (
-                datetime.utcfromtimestamp(task["stoppedAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                if "stoppedAt" in task
-                else "----"
-            )
-            print(
-                f"{task['jobId']}\t{task['status']}\t{start_time_str}\t{stop_time_str}"
-                f"\t{task['jobName']}"
-            )
-
+            tasks = task_description["jobs"]
+            for task in tasks:
+                start_time_str = (
+                    datetime.utcfromtimestamp(task["createdAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    if "createdAt" in task
+                    else "----"
+                )
+                stop_time_str = (
+                    datetime.utcfromtimestamp(task["stoppedAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    if "stoppedAt" in task
+                    else "----"
+                )
+                print(
+                    f"{task['jobId']}\t{task['status']}\t{start_time_str}\t{stop_time_str}"
+                    f"\t{task['jobName']}"
+                )
 
 def get_log(aws_logs, logStreamName):
     # try:
