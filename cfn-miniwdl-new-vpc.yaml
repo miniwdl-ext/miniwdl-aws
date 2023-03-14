@@ -2,29 +2,12 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Description: >  
   provision AWS infrastructure for [miniwdl-aws](https://github.com/miniwdl-ext/miniwdl-aws) 
-  -- deploy EFS file system, Batch queues, and IAM roles in the existing VPC (defined by  Subnet0, Subnet1 and SecurityGroup )
+  -- including creation of a new VPC with EFS file system, Batch queues, and IAM roles.
 
 Parameters:
   Owner:
     Description: Owner tag applied to all resources, e.g. your username/email
     Type: String
-
-  SecurityGroup:
-    Description: Name of existing SecurityGroup defined in the  VPC
-    Type: String
-    AllowedPattern: "^sg-[0-9a-f]{8,40}"
-    
-  Subnet0:
-    Description: Name of subnet (public or private) defined in the  VPC
-    Type: String
-    AllowedPattern: "^subnet-[0-9a-f]{8,40}$"
-    ConstraintDescription: "Must respect AWS naming conventions"
-
-  Subnet1:
-    Description: Name of subnet (public or private) defined in the  VPC
-    Type: String
-    AllowedPattern: "^subnet-[0-9a-f]{8,40}$"
-    ConstraintDescription: "Must respect AWS naming conventions"
 
   Environment:
     Description: Environment tag applied to all resources, and used in some resource names
@@ -41,7 +24,7 @@ Parameters:
   MaxVCPUTask:
     Description: Maximum vCPUs for task compute environment
     Type: Number
-    Default: 2048
+    Default: 256
 
   MaxVCPUWorkflow:
     Description: Maximum vCPUs for workflow compute environment
@@ -54,6 +37,164 @@ Parameters:
     Default: 75
 
 Resources:
+#######################
+# Networking
+# borrowed from https://github.com/awslabs/genomics-secondary-analysis-using-aws-step-functions-and-aws-batch
+#######################
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-vpc
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-igw
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+# For simplicity, one public subnet per availability zone. 
+  SubnetPublic0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-0
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-1
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt VPC.CidrBlock, 3,12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 2
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-2
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-rtb
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+  SubnetPublic0RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic0
+  SubnetPublic1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic1
+  SubnetPublic2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic2
+
+
+# Umbrella security group for Batch compute environments & EFS mount targets, allowing any traffic
+# within the VPC and outbound (but not inbound) Internet. 
+# ToDo: The ingress could be locked down to only
+# make the EFS mount targets (TCP 2049) reachable from the Batch compute environments.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AWS Batch Launched Instances.
+      GroupName: !Sub ${Environment}
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic for updates.
+          IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W40
+            reason: Allow all outbound traffic for updates.
+          - id: W5
+            reason: Allow all outbound traffic for updates.
+          - id: W42
+            reason: Allow self-ingress on all ports for inter-node communication
 
 #######################
 # EFS
@@ -76,14 +217,21 @@ Resources:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref SharedDataFileSystem
-      SubnetId: !Ref Subnet0
+      SubnetId: !Ref SubnetPublic0
       SecurityGroups: 
       - !Ref SecurityGroup
   MountTargetSubnet1:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref SharedDataFileSystem
-      SubnetId: !Ref Subnet1
+      SubnetId: !Ref SubnetPublic1
+      SecurityGroups: 
+      - !Ref SecurityGroup
+  MountTargetSubnet2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedDataFileSystem
+      SubnetId: !Ref SubnetPublic2
       SecurityGroups: 
       - !Ref SecurityGroup
 
@@ -329,8 +477,9 @@ Resources:
         MinvCpus: 0
         MaxvCpus: !Sub ${MaxVCPUTask} 
         Subnets:
-          - !Ref Subnet0
-          - !Ref Subnet1
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
         SecurityGroupIds:
           - !Ref SecurityGroup
         SpotIamFleetRole: !GetAtt IAMRoleSpot.Arn
@@ -352,8 +501,9 @@ Resources:
         Type: FARGATE
         MaxvCpus: !Sub ${MaxVCPUWorkflow} 
         Subnets:
-          - !Ref Subnet0
-          - !Ref Subnet1
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
         SecurityGroupIds:
           - !Ref SecurityGroup
       Tags: 
@@ -399,6 +549,18 @@ Outputs:
   WorkflowQueue: 
     Value: !Sub ${Environment}-workflow
     Description: Name of Workflow Queue 
+  VpcId:
+    Value: !Ref VPC
+    Description: Virtual Private CLoud (VPC)  ID
+  PublicSubNetIds:
+    Value: !Sub ${SubnetPublic0},${SubnetPublic1},${SubnetPublic0}
+    Description: Public subnet for each availability zone
+  InternetGatewayId:
+    Value: !Ref InternetGateway
+    Description: Internet Gateway ID
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+    Description: Security group for compute resources and EFS
   EfsId:
     Value: !Ref SharedDataFileSystem
     Description: EFS file system ID

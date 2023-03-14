@@ -7,10 +7,24 @@ Deployment CLI (replace
   - miniwdl-bucket with desired name for S3 buckets for outputs. miniwdl-bucket is default
 ):
 ```
-aws s3 mb s3://miniwdl-bucket
+# Create a new VPC and deploy MiniWDL infrastructure in this VPC
+aws cloudformation deploy --template-file cfn-miniwdl-new-vpc.yaml \
+    --stack-name MiniWDL-new-VPC --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  S3UploadBucket=miniwdl-bucket Owner=somebody@someemail.com
+aws cloudformation describe-stacks --stack-name MiniWDL
+```
+
+```
+# Deploy MiniWDL infrastructure in existing VPC
 aws cloudformation deploy --template-file cfn-miniwdl.yaml \
     --stack-name MiniWDL --capabilities CAPABILITY_NAMED_IAM \
-    --parameter-overrides  S3UploadBucket=miniwdl-bucket Owner=somebody@someemail.com
+    --parameter-overrides  \
+    S3UploadBucket=miniwdl-bucket \
+    Owner=somebody@someemail.com  \
+    Subnet0=subnet-0f6db482bddf223c8  \
+    Subnet1=subnet-0b2ad3bbbe3652a00 \
+    SecurityGroup=sg-058deaa09fcdadc69
+
 aws cloudformation describe-stacks --stack-name MiniWDL
 ```
 
