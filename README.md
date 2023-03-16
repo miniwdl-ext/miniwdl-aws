@@ -1,7 +1,8 @@
 # MiniWDL AWS Batch and GPU support
 
-## Infrastructure deployment
+## Infrastructure deployment ##
 
+### EFS infrastructure ###
 Deployment CLI (replace
   - somebody@someemail.com with your username/email for identification of allocated resources
   - miniwdl-bucket with desired name for S3 buckets for outputs. miniwdl-bucket is default
@@ -21,13 +22,30 @@ aws cloudformation deploy --template-file cfn-miniwdl.yaml \
     --parameter-overrides  \
     S3UploadBucket=miniwdl-bucket \
     Owner=somebody@someemail.com  \
-    Subnet0=subnet-0f6db482bddf223c8  \
-    Subnet1=subnet-0b2ad3bbbe3652a00 \
-    SecurityGroup=sg-058deaa09fcdadc69
+    Subnet0=subnet-0b2ad3bbbe3652a00 \
+    Subnet1=subnet-0f6db482bddf223c8 \
+    SecurityGroupId=sg-058deaa09fcdadc69
 
 aws cloudformation describe-stacks --stack-name MiniWDL
 ```
+### FSx for Lustre infrastructure ###
+NOT YET FINISHED AND IS NOT WORKING
+```
+# Deploy MiniWDL FSx for Lustre infrastructure in existing VPC
+aws cloudformation deploy --template-file cfn-miniwdl-fsx.yaml \
+    --stack-name MiniWDL-fsx --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  \
+    S3UploadBucket=miniwdl-bucket \
+    Owner=somebody@someemail.com  \
+    SubnetId=subnet-0b2ad3bbbe3652a00 \
+    SecurityGroupId=sg-058deaa09fcdadc69
 
+miniwdl-aws-submit --no-efs \
+  --workflow-queue miniwdl-lustre-workflow \
+  --self-test --follow  
+
+aws cloudformation describe-stacks --stack-name MiniWDL-fsx
+```
 ## Install latest version
 ```
 pip install git+https://github.com/staskh/miniwdl-aws.git
