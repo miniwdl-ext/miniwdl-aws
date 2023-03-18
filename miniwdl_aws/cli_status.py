@@ -136,7 +136,7 @@ def detect_tags_args(aws_batch, args):
             )
             sys.exit(1)
         workflow_queue_tags = workflow_queue["jobQueues"][0]["tags"]
-        
+
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:
@@ -309,12 +309,16 @@ def job_status(aws_batch, aws_logs, args):
             tasks = task_description["jobs"]
             for task in tasks:
                 start_time_str = (
-                    datetime.utcfromtimestamp(task["createdAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    datetime.utcfromtimestamp(task["createdAt"] / 1000).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
                     if "createdAt" in task
                     else "----"
                 )
                 stop_time_str = (
-                    datetime.utcfromtimestamp(task["stoppedAt"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    datetime.utcfromtimestamp(task["stoppedAt"] / 1000).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
                     if "stoppedAt" in task
                     else "----"
                 )
@@ -322,6 +326,7 @@ def job_status(aws_batch, aws_logs, args):
                     f"{task['jobId']}\t{task['status']}\t{start_time_str}\t{stop_time_str}"
                     f"\t{task['jobName']}"
                 )
+
 
 def get_log(aws_logs, logStreamName):
     # try:
