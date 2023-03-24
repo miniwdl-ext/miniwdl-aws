@@ -1,0 +1,569 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >  
+  provision AWS infrastructure for [miniwdl-aws](https://github.com/miniwdl-ext/miniwdl-aws) 
+  -- including creation of a new VPC with EFS file system, Batch queues, and IAM roles.
+
+Parameters:
+  Owner:
+    Description: Owner tag applied to all resources, e.g. your username/email
+    Type: String
+
+  Environment:
+    Description: Environment tag applied to all resources, and used in some resource names
+    Type: String
+    Default: miniwdl
+
+  S3UploadBucket:
+    Description: S3 bucket name for automatic upload of workflow outputs with `miniwdl-aws-submit --s3upload`
+    Type: String
+    Default:  miniwdl-bucket
+    AllowedPattern: "((?=^.{3,63}$)(?!^(\\d+\\.)+\\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])$)|(^.{0}$))"
+    ConstraintDescription: "Must respect AWS naming conventions"
+
+  MaxVCPUTask:
+    Description: Maximum vCPUs for task compute environment
+    Type: Number
+    Default: 256
+
+  MaxVCPUWorkflow:
+    Description: Maximum vCPUs for workflow compute environment
+    Type: Number
+    Default: 16
+
+  BatchSpotBidPercentage:
+    Type: Number
+    Description: The maximum percentage that an EC2 Spot Instance price can be when compared with the On-Demand price for that instance type before instances are launched.
+    Default: 75
+
+Resources:
+#######################
+# Networking
+# borrowed from https://github.com/awslabs/genomics-secondary-analysis-using-aws-step-functions-and-aws-batch
+#######################
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-vpc
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-igw
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+# For simplicity, one public subnet per availability zone. 
+  SubnetPublic0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-0
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 3, 12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-1
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt VPC.CidrBlock, 3,12]]
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+          - 2
+          - Fn::GetAZs: ""
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-Public-2
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-rtb
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+  SubnetPublic0RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic0
+  SubnetPublic1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic1
+  SubnetPublic2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref SubnetPublic2
+
+
+# Umbrella security group for Batch compute environments & EFS mount targets, allowing any traffic
+# within the VPC and outbound (but not inbound) Internet. 
+# ToDo: The ingress could be locked down to only
+# make the EFS mount targets (TCP 2049) reachable from the Batch compute environments.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AWS Batch Launched Instances.
+      GroupName: !Sub ${Environment}
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic for updates.
+          IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W40
+            reason: Allow all outbound traffic for updates.
+          - id: W5
+            reason: Allow all outbound traffic for updates.
+          - id: W42
+            reason: Allow self-ingress on all ports for inter-node communication
+
+#######################
+# EFS
+# borrowed from https://github.com/aws-samples/aws-genomics-workflows
+#######################
+  SharedDataFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: maxIO #generalPurpose
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${Environment}-efs
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  MountTargetSubnet0:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedDataFileSystem
+      SubnetId: !Ref SubnetPublic0
+      SecurityGroups: 
+      - !Ref SecurityGroup
+  MountTargetSubnet1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedDataFileSystem
+      SubnetId: !Ref SubnetPublic1
+      SecurityGroups: 
+      - !Ref SecurityGroup
+  MountTargetSubnet2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedDataFileSystem
+      SubnetId: !Ref SubnetPublic2
+      SecurityGroups: 
+      - !Ref SecurityGroup
+
+  AccessPoint:
+      Type: 'AWS::EFS::AccessPoint'
+      Properties:
+        FileSystemId: !Ref SharedDataFileSystem
+        PosixUser:
+          Uid: 0
+          Gid: 0
+        RootDirectory:
+          Path: /
+        
+#######################
+# IAM roles
+#######################
+# For Batch EC2 worker instances running WDL tasks
+  IAMRoleTask:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-task
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+      - "arn:aws:iam::aws:policy/AmazonElasticFileSystemClientReadWriteAccess"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+# For Batch Fargate tasks running miniwdl itself
+# This role needs to be set with the Batch job definition, not as part of the compute environment;
+# miniwdl-aws-submit detects it from the WorkflowEngineRoleArn tag on the workflow job queue, set
+# below.
+  IAMRoleWorkflow:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-workflow
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      - "arn:aws:iam::aws:policy/AWSBatchFullAccess"
+      - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      - "arn:aws:iam::aws:policy/AmazonElasticFileSystemClientFullAccess"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+# workflow needs permissions for --s3upload, attach it as inline policy
+  IAMPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${S3UploadBucket}
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}
+          - Action:
+              - s3:GetObject
+              - s3:PutObject
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${S3UploadBucket}/*
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}/*
+      Roles: 
+        - !Ref IAMRoleWorkflow
+      PolicyName: !Sub "${IAMRoleWorkflow}-s3upload"
+
+# Boilerplate roles
+  IAMRoleBatch:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-batch
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - batch.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  IAMRoleSpot:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-spot
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - spotfleet.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+# The following service-linked roles can be created only once per account; As oposite to TerraForm, 
+# CloudFormation is Ok with trying to create it again as long as description stil the same 
+  SpotSLR:
+    Type: 'AWS::IAM::ServiceLinkedRole'
+    Properties:
+      AWSServiceName: spot.amazonaws.com
+      Description: Default EC2 Spot Service Linked Role
+  SpotFleetSLR:
+    Type: 'AWS::IAM::ServiceLinkedRole'
+    Properties:
+      AWSServiceName: spotfleet.amazonaws.com
+      Description: Default EC2 Spot Fleet Service Linked Role
+
+#######################
+# Batch
+#######################
+  IAMRoleTaskProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${Environment}-task
+      Path: "/"
+      Roles:
+        - Ref: IAMRoleTask
+
+  LaunchTemplateTask:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${Environment}-task
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Name: !Sub ${Environment}-task
+        UserData:
+          Fn::Base64: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+            --==MYBOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            # To run on first boot of an EC2 instance with NVMe instance storage volumes:
+            # 1) Assembles them into a RAID0 array, formats with XFS, and mounts to /mnt/scratch
+            # 2) Replaces /var/lib/docker with a symlink to /mnt/scratch/docker so that docker images and
+            #    container file systems use this high-performance scratch space. (restarts docker)
+            # The configuration persists through reboots (but not instance stop).
+            # logs go to /var/log/cloud-init-output.log
+            # refs:
+            # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ssd-instance-store.html
+            # https://github.com/kislyuk/aegea/blob/master/aegea/rootfs.skel/usr/bin/aegea-format-ephemeral-storage
+
+            set -euxo pipefail
+            shopt -s nullglob
+
+
+            devices=(/dev/xvd[b-m] /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_AWS?????????????????)
+            num_devices="${#devices[@]}"
+            if (( num_devices > 0 )) && ! grep /dev/md0 <(df); then
+                mdadm --create /dev/md0 --force --auto=yes --level=0 --chunk=256 --raid-devices=${num_devices} ${devices[@]}
+                mkfs.xfs -f /dev/md0
+                mkdir -p /mnt/scratch
+                mount -o defaults,noatime,largeio,logbsize=256k -t xfs /dev/md0 /mnt/scratch
+                echo UUID=$(blkid -s UUID -o value /dev/md0) /mnt/scratch xfs defaults,noatime,largeio,logbsize=256k 0 2 >> /etc/fstab
+                update-initramfs -u
+            fi
+            mkdir -p /mnt/scratch/tmp
+
+
+            systemctl stop docker || true
+            if [ -d /var/lib/docker ] && [ ! -L /var/lib/docker ]; then
+                mv /var/lib/docker /mnt/scratch
+            fi
+            mkdir -p /mnt/scratch/docker
+            ln -s /mnt/scratch/docker /var/lib/docker
+            systemctl restart docker || true
+            --==MYBOUNDARY==--
+
+  ComputeEnvironmentTask:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      #ComputeEnvironmentName: !Sub ${Environment}-task #to avoid "Object already exists" error
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: SPOT
+        InstanceTypes: 
+          - r5d
+          - m5d
+          - c5d
+          - p4d
+          - p3
+          - p2
+          - g4dn
+        AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+        # Set the Spot price to 75% of on-demand price
+        # This is the maximum price for spot instances that Batch will launch.
+        # Lowering this puts a limit on the spot capacity that Batch has available.
+        # Spot instances are terminated when on-demand capacity is needed, regardless of the price set.
+        BidPercentage: !Ref BatchSpotBidPercentage 
+        MinvCpus: 0
+        MaxvCpus: !Sub ${MaxVCPUTask} 
+        Subnets:
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        SpotIamFleetRole: !GetAtt IAMRoleSpot.Arn
+        InstanceRole: !GetAtt IAMRoleTaskProfile.Arn  
+        LaunchTemplate:
+          LaunchTemplateId: !Ref LaunchTemplateTask     
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  ComputeEnvironmentWorkflow:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      #ComputeEnvironmentName: !Sub ${Environment}-workflow #to avoid "Object already exists" error
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: FARGATE
+        MaxvCpus: !Sub ${MaxVCPUWorkflow} 
+        Subnets:
+          - !Ref SubnetPublic0
+          - !Ref SubnetPublic1
+          - !Ref SubnetPublic2
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueTask:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-task
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentTask
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueWorkflow:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-workflow
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentWorkflow
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+        # those tags below are used by miniwdl_aws_submit and other utily scripts
+        WorkflowEngineRoleArn: !GetAtt IAMRoleWorkflow.Arn
+        DefaultTaskQueue: !Sub ${Environment}-task
+        DefaultFsap: !Ref AccessPoint
+        DefaultFs: !Ref SharedDataFileSystem
+        S3UploadBucket: !Sub ${S3UploadBucket}
+
+#######################
+# Outputs
+#######################
+Outputs:
+  WorkflowQueue: 
+    Value: !Sub ${Environment}-workflow
+    Description: Name of Workflow Queue 
+  VpcId:
+    Value: !Ref VPC
+    Description: Virtual Private CLoud (VPC)  ID
+  PublicSubNetIds:
+    Value: !Sub ${SubnetPublic0},${SubnetPublic1},${SubnetPublic0}
+    Description: Public subnet for each availability zone
+  InternetGatewayId:
+    Value: !Ref InternetGateway
+    Description: Internet Gateway ID
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+    Description: Security group for compute resources and EFS
+  EfsId:
+    Value: !Ref SharedDataFileSystem
+    Description: EFS file system ID
+  FsapId:
+    Value: !Ref AccessPoint
+    Description: EFS access point ID

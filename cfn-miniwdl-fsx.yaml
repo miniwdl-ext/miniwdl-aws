@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >  
+  provision AWS infrastructure for [miniwdl-aws](https://github.com/miniwdl-ext/miniwdl-aws) 
+  -- deploy FSx for Lustra file system, Batch queues, and IAM roles in the existing VPC (defined by  SubnetId and SecurityGroupId )
+
+Parameters:
+  Owner:
+    Description: Owner tag applied to all resources, e.g. your username/email
+    Type: String
+   
+  StorageCapacity:
+    Default: 1200
+    Description: Storage capacity of file system in increments of 1200 GiBs
+    MaxValue: 100200
+    MinValue: 1200
+    Type: Number
+
+  SecurityGroupId:
+    Description: Select an existing security group id
+    Type: AWS::EC2::SecurityGroup::Id 
+    AllowedPattern: "^sg-[0-9a-f]{8,40}"
+
+  SubnetId:
+    Description: Select an existing subnet id
+    Type: AWS::EC2::Subnet::Id
+    AllowedPattern: "^subnet-[0-9a-f]{8,40}$"
+
+  Environment:
+    Description: Environment tag applied to all resources, and used in some resource names
+    Type: String
+    Default: miniwdl-lustre
+
+  S3UploadBucket:
+    Description: S3 bucket name for automatic upload of workflow outputs with `miniwdl-aws-submit --s3upload`
+    Type: String
+    Default:  miniwdl-bucket
+    AllowedPattern: "((?=^.{3,63}$)(?!^(\\d+\\.)+\\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])$)|(^.{0}$))"
+    ConstraintDescription: "Must respect AWS naming conventions"
+
+  MaxVCPUTask:
+    Description: Maximum vCPUs for task compute environment
+    Type: Number
+    Default: 2048
+
+  MaxVCPUWorkflow:
+    Description: Maximum vCPUs for workflow compute environment
+    Type: Number
+    Default: 16
+
+  BatchSpotBidPercentage:
+    Type: Number
+    Description: The maximum percentage that an EC2 Spot Instance price can be when compared with the On-Demand price for that instance type before instances are launched.
+    Default: 75
+
+Resources:
+####
+# Translated into CFN from https://github.com/miniwdl-ext/miniwdl-aws-terraform/blob/main/fsx/main.tf
+####
+
+#######################
+# FSx for Lustre
+# borrowed from https://s3.amazonaws.com/amazon-fsx/workshop/lustre/templates/03-file-system.yaml
+# borrowed from https://github.com/aws-samples/aws-genomics-workflows/blob/master/src/templates/gwfcore/gwfcore-fsx.template.yaml
+#######################
+  FSxFileSystem:
+    Type: AWS::FSx::FileSystem
+    Properties:
+      FileSystemType: LUSTRE
+      FileSystemTypeVersion: 2.12
+      StorageCapacity: !Ref StorageCapacity
+      SubnetIds:
+        - !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+      LustreConfiguration:
+        DataCompressionType: LZ4
+        DeploymentType: PERSISTENT_2
+        PerUnitStorageThroughput: 1000
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-fsx
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+        
+#######################
+# IAM roles
+#######################
+# For Batch EC2 worker instances running WDL tasks
+  IAMRoleTask:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-task
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+# For Batch EC2 tasks running miniwdl itself
+# This role needs to be set with the Batch job definition, not as part of the compute environment;
+# miniwdl-aws-submit detects it from the WorkflowEngineRoleArn tag on the workflow job queue, set
+# below.
+  IAMRoleWorkflow:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-workflow
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      - "arn:aws:iam::aws:policy/AWSBatchFullAccess"
+      - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+# workflow needs permissions for --s3upload, attach it as inline policy
+  IAMPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${S3UploadBucket}
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}
+          - Action:
+              - s3:GetObject
+              - s3:PutObject
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${S3UploadBucket}/*
+              - !Sub arn:aws:s3:::miniwdl-test-${AWS::AccountId}/*
+      Roles: 
+        - !Ref IAMRoleWorkflow
+      PolicyName: !Sub "${IAMRoleWorkflow}-s3upload"
+
+# Boilerplate roles
+  IAMRoleBatch:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-batch
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - batch.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+  IAMRoleSpot:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub ${Environment}-spot
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - spotfleet.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+      - "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
+      Tags: 
+        - Key: Environment
+          Value: !Sub ${Environment}
+        - Key: Owner
+          Value: !Sub ${Owner}
+
+# The following service-linked roles can be created only once per account; As oposite to TerraForm, 
+# CloudFormation is Ok with trying to create it again as long as description stil the same 
+  SpotSLR:
+    Type: 'AWS::IAM::ServiceLinkedRole'
+    Properties:
+      AWSServiceName: spot.amazonaws.com
+      Description: Default EC2 Spot Service Linked Role
+  SpotFleetSLR:
+    Type: 'AWS::IAM::ServiceLinkedRole'
+    Properties:
+      AWSServiceName: spotfleet.amazonaws.com
+      Description: Default EC2 Spot Fleet Service Linked Role
+
+#######################
+# Batch
+#######################
+  IAMRoleTaskProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${Environment}-task
+      Path: "/"
+      Roles:
+        - Ref: IAMRoleTask
+  IAMRoleWorkflowProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${Environment}-workflow
+      Path: "/"
+      Roles:
+        - Ref: IAMRoleWorkflow
+#
+# From https://s3.amazonaws.com/amazon-fsx/workshop/lustre/templates/04-linux-instance.yaml
+# and https://github.com/miniwdl-ext/miniwdl-aws-terraform/blob/main/fsx/main.tf 
+# and https://github.com/aws-samples/aws-genomics-workflows/blob/master/src/templates/gwfcore/gwfcore-launch-template.template.yaml
+  LaunchTemplateTask:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${Environment}-task
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Name: !Sub ${Environment}-workflow
+        UserData:
+          Fn::Base64: 
+            !Sub |  # ToDo: implement /mnt/scratch as per https://github.com/miniwdl-ext/miniwdl-aws-terraform/blob/main/fsx/main.tf 
+              Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+              --==BOUNDARY==
+              Content-Type: text/x-shellscript; charset="us-ascii"
+
+              #!/bin/bash
+              # enable EC2 Instance Connect for troubleshooting (if security group allows inbound SSH)
+              - yum install -y ec2-instance-connect && grep eic_run_authorized_keys /etc/ssh/sshd_config
+              # mount FSxL to /mnt/net
+              - amazon-linux-extras install -y lustre2.10
+              - mkdir -p /mnt/net
+              - mount -t lustre -o noatime,flock ${FSxFileSystem}.fsx.${AWS::Region}.amazonaws.com@tcp:/${FSxFileSystem.LustreMountName} /mnt/net
+              - lfs setstripe -E 1G -c 1 -E 16G -c 4 -S 16M -E -1 -c -1 -S 256M /mnt/net
+              - df -h
+              # Somehow the preceding steps nondeterministically interfere with ECS agent startup. Set a cron
+              # job to keep trying to start it. (We can't simply `systemctl start ecs` here, because the ecs
+              # systemd service requires cloud-init to have finished.)
+              - echo "* * * * * root /usr/bin/systemctl start ecs" > /etc/cron.d/ecs-workaround
+              - /usr/bin/systemctl reload crond
+              --==BOUNDARY==--
+
+  ComputeEnvironmentTask:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      #ComputeEnvironmentName: !Sub ${Environment}-task #to avoid "Object already exists" error
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: SPOT
+        InstanceTypes: 
+          - r5d
+          - m5d
+          - c5d
+          - p4d
+          - p3
+          - p2
+          - g4dn
+        AllocationStrategy: SPOT_CAPACITY_OPTIMIZED
+        # Set the Spot price to 75% of on-demand price
+        # This is the maximum price for spot instances that Batch will launch.
+        # Lowering this puts a limit on the spot capacity that Batch has available.
+        # Spot instances are terminated when on-demand capacity is needed, regardless of the price set.
+        BidPercentage: !Ref BatchSpotBidPercentage 
+        MinvCpus: 0
+        MaxvCpus: !Sub ${MaxVCPUTask} 
+        Subnets:
+          - !Ref SubnetId
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        SpotIamFleetRole: !GetAtt IAMRoleSpot.Arn
+        InstanceRole: !GetAtt IAMRoleTaskProfile.Arn  
+        LaunchTemplate:
+          LaunchTemplateId: !Ref LaunchTemplateTask     
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  ComputeEnvironmentWorkflow:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      #ComputeEnvironmentName: !Sub ${Environment}-workflow #to avoid "Object already exists" error
+      ServiceRole: !GetAtt IAMRoleBatch.Arn
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: EC2
+        InstanceTypes: 
+          - m5.large
+        AllocationStrategy: BEST_FIT_PROGRESSIVE
+        MinvCpus: 0
+        MaxvCpus: !Sub ${MaxVCPUWorkflow} 
+        InstanceRole: !GetAtt IAMRoleWorkflowProfile.Arn  
+        LaunchTemplate:
+          LaunchTemplateId: !Ref LaunchTemplateTask  
+        Subnets:
+          - !Ref SubnetId
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueTask:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-task
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentTask
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+
+  BatchJobQueueWorkflow:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Environment}-workflow
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 0
+          ComputeEnvironment: !Ref ComputeEnvironmentWorkflow
+      Tags: 
+        Environment: !Sub ${Environment}
+        Owner: !Sub ${Owner} 
+        # those tags below are used by miniwdl_aws_submit and other utility scripts
+        WorkflowEngineRoleArn: !GetAtt IAMRoleWorkflow.Arn
+        DefaultTaskQueue: !Sub ${Environment}-task
+        DefaultFs: !Ref FSxFileSystem
+        S3UploadBucket: !Sub ${S3UploadBucket}
+
+#######################
+# Outputs
+#######################
+Outputs:
+  WorkflowQueue: 
+    Value: !Sub ${Environment}-workflow
+    Description: Name of Workflow Queue 
+  FileSystemId:
+    Value: !Ref FSxFileSystem
+  FSxMount:
+    Value: !GetAtt FSxFileSystem.LustreMountName
+    Description: FSx Mount Name
+  MountInstruction:
+    Value: !Sub mount -t lustre -o noatime,flock ${FSxFileSystem}.fsx.${AWS::Region}.amazonaws.com@tcp:/${FSxFileSystem.LustreMountName} /mnt/net

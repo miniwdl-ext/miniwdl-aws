@@ -1,3 +1,84 @@
+# MiniWDL AWS Batch and GPU support
+
+## Infrastructure deployment ##
+
+### EFS infrastructure ###
+Deployment CLI (replace
+  - somebody@someemail.com with your username/email for identification of allocated resources
+  - miniwdl-bucket with desired name for S3 buckets for outputs. miniwdl-bucket is default
+):
+```
+# Create a new VPC and deploy MiniWDL infrastructure in this VPC
+aws cloudformation deploy --template-file cfn-miniwdl-new-vpc.yaml \
+    --stack-name MiniWDL-new-VPC --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  S3UploadBucket=miniwdl-bucket Owner=somebody@someemail.com
+aws cloudformation describe-stacks --stack-name MiniWDL
+```
+
+```
+# Deploy MiniWDL infrastructure in existing VPC
+aws cloudformation deploy --template-file cfn-miniwdl.yaml \
+    --stack-name MiniWDL --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  \
+    S3UploadBucket=miniwdl-bucket \
+    Owner=somebody@someemail.com  \
+    Subnet0=subnet-0b2ad3bbbe3652a00 \
+    Subnet1=subnet-0f6db482bddf223c8 \
+    SecurityGroupId=sg-058deaa09fcdadc69
+
+aws cloudformation describe-stacks --stack-name MiniWDL
+```
+### FSx for Lustre infrastructure ###
+NOT YET FINISHED AND IS NOT WORKING
+```
+# Deploy MiniWDL FSx for Lustre infrastructure in existing VPC
+aws cloudformation deploy --template-file cfn-miniwdl-fsx.yaml \
+    --stack-name MiniWDL-fsx --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides  \
+    S3UploadBucket=miniwdl-bucket \
+    Owner=somebody@someemail.com  \
+    SubnetId=subnet-0b2ad3bbbe3652a00 \
+    SecurityGroupId=sg-058deaa09fcdadc69
+
+miniwdl-aws-submit --no-efs \
+  --workflow-queue miniwdl-lustre-workflow \
+  --self-test --follow  
+
+aws cloudformation describe-stacks --stack-name MiniWDL-fsx
+```
+## Install latest version
+```
+pip install git+https://github.com/staskh/miniwdl-aws.git
+```
+
+## Test deployment
+Replace --s3upload value with one selected in infrastructure deployment.
+
+to test your setup, run
+```
+miniwdl-aws-submit --self-test --follow --workflow-queue miniwdl-workflow 
+```
+
+the same, but explicit test can be perfomed with 
+```
+miniwdl-aws-submit --verbose --no-cache --follow --s3upload s3://miniwdl-bucket/self_test https://raw.githubusercontent.com/staskh/miniwdl-aws/main/test_workflow/self_test/test.wdl who=https://raw.githubusercontent.com/chanzuckerberg/miniwdl/main/tests/alyssa_ben.txt 
+```
+
+to test GPU-based workflow, run
+```
+miniwdl-aws-submit --verbose --no-cache --follow --s3upload s3://miniwdl-bucket/gpu_test  https://raw.githubusercontent.com/staskh/miniwdl-aws/main/test_workflow/gpu_test/gpu_test.wdl
+```
+
+
+# Fork improvements
+
+## CloudFormation template for cloud setup
+Deployment script for **miniwdl-aws cloud**, replacement Terraform-based script [**miniwdl-aws-terraform**](https://github.com/miniwdl-ext/miniwdl-aws-terraform)]
+
+## Support for GPU-based tasks
+See WDL example at https://github.com/staskh/miniwdl-aws/tree/main/test_workflow/gpu_test 
+
+---
 # miniwdl AWS plugin
 
 **Extends [miniwdl](https://github.com/chanzuckerberg/miniwdl) to run workflows on [AWS Batch](https://aws.amazon.com/batch/) and [EFS](https://aws.amazon.com/efs/)**

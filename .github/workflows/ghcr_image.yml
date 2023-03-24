@@ -4,10 +4,11 @@ on: [push]
 jobs:
 
   ghcr_image:
-    if: github.repository == 'miniwdl-ext/miniwdl-aws' # don't run from forks
+    #if: github.repository == 'miniwdl-ext/miniwdl-aws' # don't run from forks
+    if: github.repository == 'staskh/miniwdl-aws' # run on  my fork
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: docker login ghcr.io
@@ -20,8 +21,9 @@ jobs:
       run: |
         python3 setup.py --version  # generate RELEASE-VERSION
 
-        REPO="ghcr.io/miniwdl-ext/miniwdl-aws"
-        TAG="$(git describe --tags --always --dirty)"
+        REPO="ghcr.io/staskh/miniwdl-aws"
+        #TAG="$(git describe --tags --always --dirty)"
+        TAG="v$(cat RELEASE-VERSION)"
 
         docker pull public.ecr.aws/amazonlinux/amazonlinux:2
         docker build --no-cache -t "${REPO}:${TAG}" .

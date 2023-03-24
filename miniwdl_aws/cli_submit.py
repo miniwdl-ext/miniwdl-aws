@@ -16,6 +16,11 @@ from collections import defaultdict
 import boto3
 from ._util import detect_aws_region, randomize_job_name, END_OF_LOG, efs_id_from_access_point
 
+# Repository for miniwdl-aws docker
+# DEFAULT_IMAGE_PREFIX = "ghcr.io/miniwdl-ext/miniwdl-aws"   # for original miniwdl-ext/miniwdl-aws repository
+DEFAULT_IMAGE_PREFIX = "ghcr.io/staskh/miniwdl-aws"  # for specific fork
+DEFAULT_WORKFLOW_QUEUE = "miniwdl-workflow"
+
 
 def miniwdl_submit_awsbatch(argv):
     # Configure from arguments/environment/tags
@@ -33,7 +38,7 @@ def miniwdl_submit_awsbatch(argv):
             "Failed to detect AWS region; configure AWS CLI or set environment AWS_DEFAULT_REGION",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return 1
     aws_batch = boto3.client("batch", region_name=aws_region_name)
     detect_tags_args(aws_batch, args)
 
@@ -106,7 +111,7 @@ def miniwdl_submit_awsbatch(argv):
             args.follow,
             expect_log_eof=not args.self_test,
         )
-    sys.exit(exit_code)
+    return exit_code
 
 
 def parse_args(argv):
@@ -229,7 +234,7 @@ def detect_env_args(args):
     args.workflow_queue = (
         args.workflow_queue
         if args.workflow_queue
-        else os.environ.get("MINIWDL__AWS__WORKFLOW_QUEUE", None)
+        else os.environ.get("MINIWDL__AWS__WORKFLOW_QUEUE", DEFAULT_WORKFLOW_QUEUE)
     )
     if not args.workflow_queue:
         print(
@@ -254,9 +259,7 @@ def detect_env_args(args):
         import importlib_metadata
 
         try:
-            args.image = "ghcr.io/miniwdl-ext/miniwdl-aws:v" + importlib_metadata.version(
-                "miniwdl-aws"
-            )
+            args.image = DEFAULT_IMAGE_PREFIX + ":v" + importlib_metadata.version("miniwdl-aws")
         except importlib_metadata.PackageNotFoundError:
             print(
                 "Failed to detect miniwdl Docker image version tag; set explicitly with --image or MINIWDL__AWS__WORKFLOW_IMAGE",
@@ -284,9 +287,15 @@ def detect_tags_args(aws_batch, args):
     role ARN. Infra provisioning (CloudFormation, Terraform, etc.) may have set the expected tags.
     """
     if not args.task_queue or (args.efs and not (args.fsap or args.workflow_role)):
-        workflow_queue_tags = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])[
-            "jobQueues"
-        ][0]["tags"]
+        workflow_queue = aws_batch.describe_job_queues(jobQueues=[args.workflow_queue])
+        if "jobQueues" not in workflow_queue or len(workflow_queue["jobQueues"]) == 0:
+            print(
+                f"Unable to find workflow job queue [{args.workflow_queue}]. Set --workflow-queue or environment variable MINIWDL__AWS__WORKFLOW_QUEUE.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        workflow_queue_tags = workflow_queue["jobQueues"][0]["tags"]
+
         if not args.task_queue:
             args.task_queue = workflow_queue_tags.get("DefaultTaskQueue", None)
             if not args.task_queue:

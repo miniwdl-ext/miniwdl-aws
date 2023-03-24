@@ -11,7 +11,7 @@ if [[ -z ${MINIWDL__AWS__WORKFLOW_IMAGE:-} ]]; then
         exit 1
     fi
 fi
-export MINIWDL_AWS_TEST_BUCKET="miniwdl-test-$(aws sts get-caller-identity | jq -r .Account)"
+export MINIWDL_AWS_TEST_BUCKET="miniwdl-test-$(aws sts get-caller-identity --query "Account" --output text)"
 >&2 echo "Creating S3 bucket $MINIWDL_AWS_TEST_BUCKET (BucketAlreadyOwnedByYou error is OK):"
 aws s3api create-bucket --bucket "$MINIWDL_AWS_TEST_BUCKET" \
     --region "$AWS_DEFAULT_REGION" --create-bucket-configuration LocationConstraint="$AWS_DEFAULT_REGION" \

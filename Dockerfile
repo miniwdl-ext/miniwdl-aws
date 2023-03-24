@@ -6,6 +6,7 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2
 # rpm dependencies
 RUN yum check-update; yum install -y \
         python3-pip \
+        git     \
         unzip
 
 # AWS CLI v2 (`yum install awscli` is a really old version)
@@ -13,6 +14,9 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/aws
 RUN sh -c 'cd /tmp && unzip awscliv2.zip' && sh /tmp/aws/install
 
 # miniwdl-aws (and PyPI dependencies listed in setup.py)
+#RUN bash -c 'pip3 install git+https://github.com/staskh/miniwdl.git'
+RUN bash -c 'cd /tmp/ && git clone https://github.com/staskh/miniwdl.git'
+RUN bash -c 'cd /tmp/miniwdl && pip3 install .'
 COPY ./ /tmp/miniwdl-aws/
 RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 
