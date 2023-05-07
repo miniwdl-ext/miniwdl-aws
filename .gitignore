@@ -4,3 +4,6 @@ __pycache__
 RELEASE-VERSION
 dist/
 *.egg-info/
+build/
+.venv/
+venv/

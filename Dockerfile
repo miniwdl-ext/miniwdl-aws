@@ -1,11 +1,12 @@
 # Docker image with miniwdl & the AWS plugin baked in. Suitable for submission to Batch as the
 # "workflow job" launching & monitoring other jobs (WDL tasks).
 
-FROM public.ecr.aws/amazonlinux/amazonlinux:2
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
 # rpm dependencies
 RUN yum check-update; yum install -y \
         python3-pip \
+        python3-setuptools \
         unzip
 
 # AWS CLI v2 (`yum install awscli` is a really old version)

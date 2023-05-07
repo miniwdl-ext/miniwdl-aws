@@ -7,7 +7,8 @@ set -euo pipefail
 
 # build local image
 cd "$(dirname "$0")/.."
->&2 docker pull public.ecr.aws/amazonlinux/amazonlinux:2
+>&2 python3 setup.py check
+>&2 docker pull public.ecr.aws/amazonlinux/amazonlinux:2023
 >&2 docker build -t miniwdl-aws .
 
 # login to ECR
