@@ -4,7 +4,7 @@
 
 This miniwdl plugin enables it to execute WDL tasks as AWS Batch jobs. It uses EFS for work-in-progress file I/O, optionally uploading final workflow outputs to S3.
 
-Before diving into this, first consider [Amazon Omics](https://aws.amazon.com/omics/), which includes a [WDL workflow runner service](https://docs.aws.amazon.com/omics/latest/dev/creating-workflows.html) that doesn't need you to deploy compute infrastructure in your AWS account. (The behind-the-scenes implementation differs from the plugin found here.)
+**Before diving into this, first consider [Amazon Omics](https://aws.amazon.com/omics/)**, which includes a [WDL workflow runner service](https://docs.aws.amazon.com/omics/latest/dev/creating-workflows.html) that doesn't need you to deploy compute infrastructure in your AWS account. Our companion project **[miniwdl-omics-run](https://github.com/miniwdl-ext/miniwdl-omics-run)** provides a convenient CLI for launching Omics runs with local WDL source code files. (The Omics backend differs from the plugin found here.)
 
 There are a few ways to deploy this miniwdl-aws plugin:
 
