@@ -311,14 +311,18 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         describe_period = self.cfg.get_float("aws", "describe_period", 1.0)
         cleanup.callback((lambda job_id: self._describer.unsubscribe(job_id)), job_id)
         poll_stderr = cleanup.enter_context(self.poll_stderr_context(logger))
+        last_job_desc_json = None
         exit_code = None
         while exit_code is None:
             time.sleep(describe_period)
             job_desc = self._describer.describe(aws_batch, job_id, describe_period)
-            write_atomic(
-                json.dumps(job_desc, indent=2, sort_keys=True),
-                os.path.join(self.host_dir, f"awsBatchJobDetail.{job_id}.json"),
-            )
+            job_desc_json = json.dumps(job_desc, indent=2, sort_keys=True)
+            if job_desc_json != last_job_desc_json:
+                last_job_desc_json = job_desc_json
+                write_atomic(
+                    job_desc_json,
+                    os.path.join(self.host_dir, f"awsBatchJobDetail.{job_id}.json"),
+                )
             job_status = job_desc["status"]
             if "container" in job_desc and "logStreamName" in job_desc["container"]:
                 self._logStreamName = job_desc["container"]["logStreamName"]
