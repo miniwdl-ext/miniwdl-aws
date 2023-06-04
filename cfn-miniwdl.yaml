@@ -2,15 +2,15 @@ AWSTemplateFormatVersion: 2010-09-09
 
 Description: >  
   provision AWS infrastructure for [miniwdl-aws](https://github.com/miniwdl-ext/miniwdl-aws) 
-  -- deploy EFS file system, Batch queues, and IAM roles in the existing VPC (defined by  Subnet0, Subnet1 and SubnetGroupId )
+  -- deploy EFS file system, Batch queues, and IAM roles in the existing VPC (defined by  Subnet0, Subnet1 and SecurityGroupId )
 
 Parameters:
   Owner:
     Description: Owner tag applied to all resources, e.g. your username/email
     Type: String
 
-  SubnetGroupId:
-    Description: Id of existing SubnetGroupId defined in the  VPC
+  SecurityGroupId:
+    Description: Id of existing SecurityGroupId defined in the  VPC
     Type: String
     AllowedPattern: "^sg-[0-9a-f]{8,40}"
     
@@ -77,15 +77,15 @@ Resources:
     Properties:
       FileSystemId: !Ref SharedDataFileSystem
       SubnetId: !Ref Subnet0
-      SubnetGroupIds: 
-      - !Ref SubnetGroupId
+      SecurityGroups: 
+      - !Ref SecurityGroupId
   MountTargetSubnet1:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref SharedDataFileSystem
       SubnetId: !Ref Subnet1
-      SubnetGroupIds: 
-      - !Ref SubnetGroupId
+      SecurityGroups: 
+      - !Ref SecurityGroupId
 
   AccessPoint:
       Type: 'AWS::EFS::AccessPoint'
@@ -331,8 +331,8 @@ Resources:
         Subnets:
           - !Ref Subnet0
           - !Ref Subnet1
-        SubnetGroupIdIds:
-          - !Ref SubnetGroupId
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
         SpotIamFleetRole: !GetAtt IAMRoleSpot.Arn
         InstanceRole: !GetAtt IAMRoleTaskProfile.Arn  
         LaunchTemplate:
@@ -354,8 +354,8 @@ Resources:
         Subnets:
           - !Ref Subnet0
           - !Ref Subnet1
-        SubnetGroupIdIds:
-          - !Ref SubnetGroupId
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
       Tags: 
         Environment: !Sub ${Environment}
         Owner: !Sub ${Owner} 
