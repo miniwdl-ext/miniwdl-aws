@@ -20,6 +20,9 @@ RUN bash -c 'cd /tmp/miniwdl && pip3 install .'
 COPY ./ /tmp/miniwdl-aws/
 RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
 
+# fix for urllib3 versionin mismatch
+RUN pip3 install --force-reinstall urllib3==1.26.15 
+
 # cleanup (for squashed image)
 RUN yum clean all && rm -rf /tmp/miniwdl* /tmp/aws*
 
