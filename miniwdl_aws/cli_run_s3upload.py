@@ -127,7 +127,7 @@ def miniwdl_run_s3upload_inner():
     # append miniwdl's run name to S3_UPLOAD_FOLDER (unless the latter ends in '/')
     s3_upload_folder = args.s3upload
     if not s3_upload_folder.endswith("/"):
-        s3_upload_folder += os.path.basename(run_dir.rstrip("/")) + "/"
+        s3_upload_folder += "/" + os.path.basename(run_dir.rstrip("/")) + "/"
 
     # upload logs
     print(
