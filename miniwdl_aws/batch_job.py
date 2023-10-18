@@ -282,7 +282,7 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
             "mountPoints": [{"containerPath": self._fs_mount, "sourceVolume": "file_io_root"}],
         }
 
-        for k, v in self.cfg.get_dict("aws", "container_properties", {}):
+        for k, v in self.cfg.get_dict("aws", "container_properties", {}).items():
             if k in container_properties:
                 raise WDL.Error.RuntimeError(
                     f"Config [aws] container_properties may not override '{k}'"
