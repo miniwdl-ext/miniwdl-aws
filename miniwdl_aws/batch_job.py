@@ -244,7 +244,11 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         image_tag = self.runtime_values.get("docker", "ubuntu:20.04")
         vcpu = self.runtime_values.get("cpu", 1)
         memory_mbytes = max(
-            math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576), 1024
+            (
+                math.ceil(self.runtime_values.get("memory_reservation", 0) / 1048576)
+                + self.cfg.get_int("aws", "memory_delta", -33)
+            ),
+            991,
         )
         commands = [
             f"cd {self.container_dir}/work",
