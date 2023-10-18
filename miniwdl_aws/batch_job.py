@@ -263,11 +263,11 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         ]
 
         if self.runtime_values.get("gpu", False):
-            gpu_value = 1
-            if self.cfg.has_option("aws", "gpu_value"):
-                gpu_value = self.cfg.get_int("aws", "gpu_value")
+            gpu_value = self.cfg.get_int("aws", "gpu_value", 1)
             if gpu_value > 1:
-                logger.info(_("requesting multiple GPUs", value=gpu_value))
+                logger.info(
+                    _("requesting multiple GPUs (per config [aws] gpu_value)", gpu_value=gpu_value)
+                )
             resource_requirements += [{"type": "GPU", "value": str(gpu_value)}]
 
         container_properties = {
@@ -281,6 +281,13 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
             "privileged": self.runtime_values.get("privileged", False),
             "mountPoints": [{"containerPath": self._fs_mount, "sourceVolume": "file_io_root"}],
         }
+
+        for k, v in self.cfg.get_dict("aws", "container_properties", {}).items():
+            if k in container_properties:
+                raise WDL.Error.RuntimeError(
+                    f"Config [aws] container_properties may not override '{k}'"
+                )
+            container_properties[k] = v
 
         if self.cfg["task_runtime"].get_bool("as_user"):
             user = f"{os.geteuid()}:{os.getegid()}"
