@@ -265,7 +265,9 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
         if self.runtime_values.get("gpu", False):
             gpu_value = self.cfg.get_int("aws", "gpu_value", 1)
             if gpu_value > 1:
-                logger.info(_("requesting multiple GPUs", value=gpu_value))
+                logger.info(
+                    _("requesting multiple GPUs (per config [aws] gpu_value)", gpu_value=gpu_value)
+                )
             resource_requirements += [{"type": "GPU", "value": str(gpu_value)}]
 
         container_properties = {
