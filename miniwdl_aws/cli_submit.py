@@ -617,7 +617,8 @@ def wait(aws_region_name, aws_batch, workflow_job_id, follow, expect_log_eof=Tru
         return exit_code
     except KeyboardInterrupt:
         print(
-            f"[miniwdl-aws-submit] interrupted by Ctrl-C; workflow may remain active in workflow job {workflow_job_id}",
+            "[miniwdl-aws-submit] interrupted by Ctrl-C; workflow job probably remains active. To terminate:\n"
+            f"                     aws batch terminate-job --reason abort --job-id {workflow_job_id}",
             file=sys.stderr,
         )
         return -1
