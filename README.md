@@ -109,6 +109,14 @@ Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amaz
 
 Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
+## GPU jobs
+
+Miniwdl-aws recognizes the `gpu: true` setting in a task `runtime{}` section, and translates that to a [GPU resource requirement](https://docs.aws.amazon.com/batch/latest/userguide/gpu-jobs.html) for AWS Batch. For the job to be scheduled, the Batch compute environment must of course make GPU instance types available.
+
+By default, `gpu: true` translates to a requirement for a single GPU. The WDL spec defines this as a boolean value, so there is no clear way to request multiple GPUs for a given task. The configuration `MINIWDL__AWS__GPU_VALUE` can be set to an integer *N* to make *all* tasks with `gpu: true` require *N* GPUs.
+
+Multi-GPU operations may need more shared memory than Batch typically makes available in each task container. To increase the available shared memory, set e.g. `MINIWDL__AWS__CONTAINER_PROPERTIES='{"linuxParameters":{"sharedMemorySize":4096}}'`
+
 ## Contributing
 
 Pull requests are welcome! For help, open an issue here or drop in on [#miniwdl in the OpenWDL Slack](https://openwdl.slack.com/archives/C02JCRJU79T).
