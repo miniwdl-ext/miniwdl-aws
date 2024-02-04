@@ -11,8 +11,6 @@ YMMV because host OS version & configuration may affect availability of the coun
 pseudo-files under /sys/fs/cgroup
 """
 
-import WDL
-
 
 def main(cfg, logger, run_id, run_dir, task, **recv):
     # do nothing with inputs
