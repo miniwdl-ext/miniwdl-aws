@@ -107,6 +107,21 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
             os.unlink(self.host_stderr_txt() + ".offset")  # PygtailLogger state file
         super().reset(logger)
 
+    def process_runtime(self, logger, runtime_eval):
+        super().process_runtime(logger, runtime_eval)  # handles cpu, memory, docker, gpu
+        if "acceleratorType" in runtime_eval:
+            if not isinstance(runtime_eval["acceleratorType"], WDL.Value.String):
+                raise WDL.Error.RuntimeError("invalid setting of runtime.acceleratorType")
+            accty = runtime_eval["acceleratorType"].value
+            if accty.startswith("nvidia"):
+                self.runtime_values["gpu"] = True
+            else:
+                logger.warning(_("ignored unrecognized runtime.acceleratorType", value=accty))
+        if "acceleratorCount" in runtime_eval:
+            if not isinstance(runtime_eval["acceleratorCount"], WDL.Value.Int):
+                raise WDL.Error.RuntimeError("invalid setting of runtime.acceleratorCount")
+            self.runtime_values["acceleratorCount"] = runtime_eval["acceleratorCount"].value
+
     def _run(self, logger, terminating, command):
         """
         Run task
@@ -268,11 +283,14 @@ class BatchJobBase(WDL.runtime.task_container.TaskContainer):
 
         if self.runtime_values.get("gpu", False):
             gpu_value = self.cfg.get_int("aws", "gpu_value", 1)
-            if gpu_value > 1:
+            if "acceleratorCount" in self.runtime_values:
+                gpu_value = self.runtime_values["acceleratorCount"]
+            elif gpu_value > 1:
                 logger.info(
                     _("requesting multiple GPUs (per config [aws] gpu_value)", gpu_value=gpu_value)
                 )
-            resource_requirements += [{"type": "GPU", "value": str(gpu_value)}]
+            if gpu_value > 0:
+                resource_requirements += [{"type": "GPU", "value": str(gpu_value)}]
 
         container_properties = {
             "image": image_tag,
