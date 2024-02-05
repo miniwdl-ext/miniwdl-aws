@@ -115,6 +115,8 @@ Miniwdl-aws recognizes the `gpu: true` setting in a task `runtime{}` section, an
 
 By default, `gpu: true` translates to a requirement for a single GPU. The WDL spec defines this as a boolean value, so there is no clear way to request multiple GPUs for a given task. The configuration `MINIWDL__AWS__GPU_VALUE` can be set to an integer *N* to make *all* tasks with `gpu: true` require *N* GPUs.
 
+Alternatively, miniwdl-aws also recognizes the `acceleratorType` and `acceleratorCount` attributes used by [AWS HealthOmics](https://docs.aws.amazon.com/omics/latest/dev/parameters-and-input-wdl.html). Any `acceleratorType` starting with "nvidia" translates to a Batch GPU requirement; the actual GPU type will depend on the instance type(s) made available by the compute environment.
+
 Multi-GPU operations may need more shared memory than Batch typically makes available in each task container. To increase the available shared memory, set e.g. `MINIWDL__AWS__CONTAINER_PROPERTIES='{"linuxParameters":{"sharedMemorySize":4096}}'`
 
 ## Contributing
