@@ -109,6 +109,8 @@ Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amaz
 
 Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
+Tasks can self-report their CPU & memory usage in their standard error logs, by setting `MINIWDL__LOG_TASK_USAGE__PERIOD=60` to report every 60 seconds (or as desired). Submit with `--verbose`, or look at the `stderr.txt` files in the task run directories, to see the "container usage" log messages.
+
 ## GPU jobs
 
 Miniwdl-aws recognizes the `gpu: true` setting in a task `runtime{}` section, and translates that to a [GPU resource requirement](https://docs.aws.amazon.com/batch/latest/userguide/gpu-jobs.html) for AWS Batch. For the job to be scheduled, the Batch compute environment must of course make GPU instance types available.

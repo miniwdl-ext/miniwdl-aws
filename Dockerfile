@@ -15,7 +15,7 @@ RUN sh -c 'cd /tmp && unzip awscliv2.zip' && sh /tmp/aws/install
 
 # miniwdl-aws (and PyPI dependencies listed in setup.py)
 COPY ./ /tmp/miniwdl-aws/
-RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install .'
+RUN bash -c 'cd /tmp/miniwdl-aws && pip3 install . && pip3 install ./plugin_log_task_usage'
 
 # cleanup (for squashed image)
 RUN yum clean all && rm -rf /tmp/miniwdl* /tmp/aws*
