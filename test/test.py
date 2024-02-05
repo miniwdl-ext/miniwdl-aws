@@ -472,3 +472,23 @@ def test_shipping_local_wdl_error(aws_batch, tmp_path, test_s3_folder):
         ],
     )
     assert rslt["exit_code"] == 123
+
+
+def test_log_task_usage(aws_batch, test_s3_folder):
+    env = dict(os.environ)
+    env["MINIWDL__LOG_TASK_USAGE__PERIOD"] = "2"
+    rslt = batch_miniwdl(
+        aws_batch,
+        [
+            os.path.join(os.path.dirname(__file__), "../plugin_log_task_usage/StressTest.wdl"),
+            "--dir",
+            "/mnt/efs/miniwdl_aws_tests",
+            "--verbose",
+            "--delete-after",
+            "always",
+        ],
+        upload=test_s3_folder + "test_log_task_usage/",
+        env=env,
+    )
+    assert rslt["success"]
+    assert "container usage ::" in get_s3uri(rslt["outputs"]["StressTest.stderr_txt"]).decode()

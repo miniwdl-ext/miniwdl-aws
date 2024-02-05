@@ -1,4 +1,5 @@
 version 1.1
+# MINIWDL__LOG_TASK_USAGE__PERIOD=2 miniwdl run examples/plugin_log_task_usage/StressTest.wdl --dir /tmp --verbose
 # MINIWDL__LOG_TASK_USAGE__PERIOD=2 miniwdl-aws-submit plugin_log_task_usage/StressTest.wdl --verbose --follow
 
 task StressTest {
@@ -6,7 +7,7 @@ task StressTest {
         Int cpu = 4
         Int memory_G = 2
         Int cpu_memory_duration_s = 10
-        Int disk_load_G = 4
+        Int disk_load_G = 2
 
         String docker = "polinux/stress" # Docker image with stress tool
     }
@@ -29,5 +30,7 @@ task StressTest {
         cpu: cpu
     }
 
-    output {}
+    output {
+        File stderr_txt = stderr()
+    }
 }
