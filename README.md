@@ -109,7 +109,7 @@ Each task job's log is also forwarded to [CloudWatch Logs](https://docs.aws.amaz
 
 Misconfigured infrastructure might prevent logs from being written to EFS or CloudWatch at all. In that case, use the AWS Batch console/API to find status messages for the workflow or task jobs.
 
-Tasks can self-report their CPU & memory usage in their standard error logs, by setting `MINIWDL__LOG_TASK_USAGE__PERIOD=60` to report every 60 seconds (or as desired). Submit with `--verbose`, or look at the `stderr.txt` files in the task run directories, to see the "container usage" log messages.
+Tasks can self-report their CPU & memory usage in their standard error logs, by setting `MINIWDL__LOG_TASK_USAGE__PERIOD=60` to report every 60 seconds (or as desired). Submit with `--verbose --follow`, or look in any task's CloudWatch Logs stream or `stderr.txt` file, to see the "container usage" log messages.
 
 ## GPU jobs
 
