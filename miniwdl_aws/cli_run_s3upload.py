@@ -55,6 +55,10 @@ def miniwdl_run_s3upload_inner():
         help="s3://bucket/folder/ at which to upload run outputs [env MINIWDL__AWS__S3_UPLOAD_FOLDER]",
     )
     parser.add_argument(
+        "--s3endpoint",
+        help="Non-AWS URL to use as the S3 endpoint [env MINIWDL__AWS__S3_ENDPOINT_URL]"
+    )
+    parser.add_argument(
         "--delete-after",
         choices=("always", "success", "failure"),
         help="with --s3upload, delete EFS run directory afterwards [env MINIWDL__AWS__S3_UPLOAD_DELETE_AFTER]",
@@ -64,9 +68,8 @@ def miniwdl_run_s3upload_inner():
     )
 
     args, unused_args = parser.parse_known_args(sys.argv[1:])
-    args.s3upload = (
-        args.s3upload if args.s3upload else os.environ.get("MINIWDL__AWS__S3_UPLOAD_FOLDER", None)
-    )
+    args.s3upload |= os.environ.get("MINIWDL__AWS__S3_UPLOAD_FOLDER", None)
+    args.s3endpoint |= os.environ.get("MINIWDL__AWS__S3_ENDPOINT_URL", None)
     args.delete_after = (
         args.delete_after.strip().lower()
         if args.delete_after
@@ -75,6 +78,13 @@ def miniwdl_run_s3upload_inner():
     if args.delete_after and not args.s3upload:
         print("--delete-after requires --s3upload", file=sys.stderr)
         sys.exit(1)
+
+    aws_s3_cmd = ["aws", "s3"]
+    if args.s3endpoint:
+        aws_s3_cmd.append(["--endpoint-url", args.s3endpoint])
+    
+    def upload1(fn, dest):
+        subprocess_run_with_clean_exit(aws_s3_cmd + ["cp", "--no-progress", fn, dest], check=True)
 
     if args.s3upload:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -161,9 +171,7 @@ def miniwdl_run_s3upload_inner():
     # upload output files, if any
     if os.path.isdir(os.path.join(run_dir, "out")):
         subprocess_run_with_clean_exit(
-            [
-                "aws",
-                "s3",
+            aws_s3_cmd + [
                 "sync",
                 "--no-progress",
                 "--follow-symlinks",
@@ -212,10 +220,6 @@ def miniwdl_run_s3upload_inner():
         )
 
     return miniwdl.returncode
-
-
-def upload1(fn, dest):
-    subprocess_run_with_clean_exit(["aws", "s3", "cp", "--no-progress", fn, dest], check=True)
 
 
 def rebase_output_path(fn, run_dir, s3_upload_folder):
